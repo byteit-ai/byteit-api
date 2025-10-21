@@ -1,5 +1,6 @@
 """Main API client for ByteIT text extraction service."""
 
+import json
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional, Union, cast, Type
@@ -217,10 +218,11 @@ class ByteITClient:
         # - file_type: CharField
         # - output_format: CharField
         # - processing_options: JSONField (without output_format)
+        # Note: processing_options must be JSON-encoded string for multipart form data
         data: Dict[str, Any] = {
             "file_type": file_type,
             "output_format": output_format,
-            "processing_options": clean_processing_options,
+            "processing_options": json.dumps(clean_processing_options),
         }
 
         # Prepare files for multipart upload
@@ -268,7 +270,7 @@ class ByteITClient:
         return Job.from_dict(job_data)
 
     def list_jobs(
-        self, user_id: Optional[str] = None, timeout: int = DEFAULT_TIMEOUT
+        self, timeout: int = DEFAULT_TIMEOUT
     ) -> JobList:  # Update to not request user_id
         """
         List all jobs for the authenticated user.
@@ -285,8 +287,6 @@ class ByteITClient:
             ...     print(f"{job.id}: {job.processing_status}")
         """
         params = {}
-        if user_id:
-            params["user_id"] = user_id
 
         response = self._request(
             "GET", f"{API_BASE}/{JOBS_PATH}/", params=params, timeout=timeout
@@ -329,9 +329,32 @@ class ByteITClient:
         try:
             response = self._session.get(url, timeout=timeout)
 
-            # Check if response is JSON (error or status)
+            # First check the status code
+            response.raise_for_status()
+
+            # Check if this is a file download by looking for Content-Disposition header
+            content_disposition = response.headers.get(
+                "Content-Disposition", ""
+            )
             content_type = response.headers.get("Content-Type", "")
+
+            # If Content-Disposition is present with "attachment", it's a file download
+            # This is true even if Content-Type is application/json (for JSON result files)
+            if "attachment" in content_disposition:
+                # This is a file download (the actual result)
+                content = response.content
+
+                # Save to file if path provided
+                if output_path:
+                    output_path = Path(output_path)
+                    output_path.write_bytes(content)
+                    return str(output_path)
+
+                return content
+
+            # If no Content-Disposition with attachment, check if it's a JSON status response
             if "application/json" in content_type:
+                # This means the job is not ready or there's an error
                 data = self._handle_response(response)
                 # Job not ready yet
                 if not data.get("ready", False):
@@ -340,9 +363,14 @@ class ByteITClient:
                         response.status_code,
                         data,
                     )
+                # If we get here with JSON, something unexpected happened
+                raise JobProcessingError(
+                    f"Unexpected JSON response: {data}",
+                    response.status_code,
+                    data,
+                )
 
-            response.raise_for_status()
-
+            # If we get here, it's a file response (not JSON)
             # Get the file content
             content = response.content
 
@@ -452,6 +480,7 @@ class ByteITClient:
 
     def __enter__(self):
         """Context manager entry."""
+        return self
 
     def __exit__(
         self,
@@ -459,7 +488,5 @@ class ByteITClient:
         exc_val: Optional[BaseException],
         exc_tb: Optional[TracebackType],
     ) -> None:
-        """Context manager exit."""
-        self.close()
         """Context manager exit."""
         self.close()
