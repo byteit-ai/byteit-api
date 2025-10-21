@@ -339,7 +339,7 @@ def example_download_result():
                     print("\nFirst 500 characters:")
                     print("-" * 60)
                     print(content)
-                    if len(content) >= 500:example_download_result
+                    if len(content) >= 500:
                         print("...")
                     print("-" * 60)
 
