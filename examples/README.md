@@ -228,9 +228,6 @@ from byteit.connectors import LocalFileInputConnector
 
 # Automatic file type detection
 input_connector = LocalFileInputConnector("document.pdf")
-
-# Explicit file type
-input_connector = LocalFileInputConnector("document.xyz", file_type="pdf")
 ```
 
 **S3InputConnector** - Process files from AWS S3

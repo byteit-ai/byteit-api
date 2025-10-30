@@ -42,14 +42,10 @@ from byteit.connectors import LocalFileInputConnector
 
 # Automatic file type detection
 connector = LocalFileInputConnector("path/to/file.pdf")
-
-# Explicit file type
-connector = LocalFileInputConnector("path/to/file.xyz", file_type="pdf")
 ```
 
 **Parameters:**
 - `file_path` (str): Path to the local file
-- `file_type` (Optional[str]): File type override (auto-detected from extension if not provided)
 
 **Raises:**
 - `FileNotFoundError`: If the file doesn't exist
@@ -78,7 +74,6 @@ connector = S3InputConnector(
 - `aws_access_key_id` (Optional[str]): AWS access key (uses boto3 defaults if not provided)
 - `aws_secret_access_key` (Optional[str]): AWS secret key (uses boto3 defaults if not provided)
 - `region` (Optional[str]): AWS region (uses boto3 defaults if not provided)
-- `file_type` (Optional[str]): File type override (auto-detected from key extension if not provided)
 
 **Requirements:**
 - Install boto3: `pip install boto3`
@@ -258,7 +253,6 @@ def test_local_file_connector():
     # Test to_dict
     config = connector.to_dict()
     assert config["type"] == "local_file"
-    assert config["file_type"] == "pdf"
     
     # Test get_file_data
     filename, file_obj = connector.get_file_data()

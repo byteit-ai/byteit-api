@@ -3,14 +3,24 @@
 from .base import InputConnector, OutputConnector
 from .LocalFileInputConnector import LocalFileInputConnector
 from .ByteITStorageOutputConnector import ByteITStorageOutputConnector
-from .S3InputConnector import S3InputConnector
-from .S3OutputConnector import S3OutputConnector
+
+# S3 connectors are optional and require boto3
+try:
+    from .S3InputConnector import S3InputConnector
+    from .S3OutputConnector import S3OutputConnector
+
+    _s3_available = True
+except ImportError:
+    _s3_available = False
+    S3InputConnector = None  # type: ignore
+    S3OutputConnector = None  # type: ignore
 
 __all__ = [
     "InputConnector",
     "OutputConnector",
     "LocalFileInputConnector",
     "ByteITStorageOutputConnector",
-    "S3InputConnector",
-    "S3OutputConnector",
 ]
+
+if _s3_available:
+    __all__.extend(["S3InputConnector", "S3OutputConnector"])

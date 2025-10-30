@@ -319,9 +319,6 @@ from byteit.connectors import LocalFileInputConnector
 
 # Automatic file type detection from extension
 input_connector = LocalFileInputConnector("document.pdf")
-
-# Explicit file type specification
-input_connector = LocalFileInputConnector("document.xyz", file_type="pdf")
 ```
 
 **S3InputConnector** - Download files from AWS S3:
@@ -425,12 +422,11 @@ Base class for all input connectors.
 ```python
 from byteit.connectors import LocalFileInputConnector
 
-connector = LocalFileInputConnector(file_path="document.pdf", file_type="pdf")
+connector = LocalFileInputConnector(file_path="document.pdf")
 ```
 
 **Properties:**
 - `file_path` (str) - Path to the local file
-- `file_type` (Optional[str]) - File type override (auto-detected if not provided)
 
 **S3InputConnector** - Download files from AWS S3:
 
@@ -452,7 +448,6 @@ connector = S3InputConnector(
 - `aws_access_key_id` (Optional[str]) - AWS access key
 - `aws_secret_access_key` (Optional[str]) - AWS secret key
 - `region` (Optional[str]) - AWS region
-- `file_type` (Optional[str]) - File type override
 
 **Requirements:** `pip install boto3`
 

@@ -11,7 +11,7 @@ class DocumentMetadata:
 
     original_filename: str
     document_type: str
-    file_size_bytes: int
+    file_size_bytes: Optional[int] = None
     page_count: Optional[int] = None
     language: str = "en"
     encoding: str = "utf-8"
@@ -61,12 +61,16 @@ class Job:
             created_at = datetime.fromisoformat(
                 created_at.replace("Z", "+00:00")
             )
+        else:
+            created_at = datetime.now()  # fallback
 
         updated_at = data.get("updated_at")
         if isinstance(updated_at, str):
             updated_at = datetime.fromisoformat(
                 updated_at.replace("Z", "+00:00")
             )
+        else:
+            updated_at = datetime.now()  # fallback
 
         started_processing_at = data.get("started_processing_at")
         if isinstance(started_processing_at, str):
@@ -82,8 +86,23 @@ class Job:
 
         # Parse metadata
         metadata = None
-        if data.get("metadata"):
-            metadata = DocumentMetadata(**data["metadata"])
+        if data.get("metadata") and isinstance(data["metadata"], dict):
+            metadata_dict = data["metadata"]
+            try:
+                metadata = DocumentMetadata(
+                    original_filename=metadata_dict.get(
+                        "original_filename", ""
+                    ),
+                    document_type=metadata_dict.get("document_type", ""),
+                    file_size_bytes=metadata_dict.get("file_size_bytes"),
+                    page_count=metadata_dict.get("page_count"),
+                    language=metadata_dict.get("language", "en"),
+                    encoding=metadata_dict.get("encoding", "utf-8"),
+                )
+            except Exception as e:
+                # If metadata parsing fails, skip it
+                print(f"Warning: Failed to parse metadata: {e}")
+                metadata = None
 
         # Parse processing options (keep as dict)
         processing_options = data.get("processing_options")

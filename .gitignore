@@ -53,3 +53,6 @@ examples/sample.pdf
 examples/output*.md
 *.pdf
 *.docx
+
+# ByteIT Schema
+ByteIT API.yaml
