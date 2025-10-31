@@ -13,13 +13,6 @@ class ByteITStorageOutputConnector(OutputConnector):
     using the job ID and get_job_result() method.
 
     This is the default output connector if none is specified.
-
-    Example:
-        >>> connector = ByteITStorageOutputConnector()
-        >>> result = client.process_document(
-        ...     input_connector=input_conn,
-        ...     output_connector=connector
-        ... )
     """
 
     def to_dict(self) -> Dict[str, Any]:

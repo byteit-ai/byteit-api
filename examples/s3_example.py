@@ -15,6 +15,7 @@ Prerequisites:
 import os
 import sys
 from pathlib import Path
+from time import time
 
 # Parent directory to path to import byteit
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -45,8 +46,8 @@ def example_s3_to_local():
     try:
         # Input from S3
         input_connector = S3InputConnector(
-            source_bucket="my-documents-bucket",
-            source_path_inside_bucket="invoices/invoice-001.pdf",
+            source_bucket="company-processed-byteit",
+            source_path_inside_bucket="input/2.pdf",
         )
 
         print("\nProcessing file from S3...")
@@ -100,13 +101,13 @@ def example_s3_to_s3():
     try:
         # Input from S3
         input_connector = S3InputConnector(
-            source_bucket="tradybg-images",
-            source_path_inside_bucket="1.pdf",
+            source_bucket="company-processed-byteit",
+            source_path_inside_bucket="input/1.pdf",
         )
 
         # Output to S3
         output_connector = S3OutputConnector(
-            bucket="tradybg-images",
+            bucket="company-processed-byteit",
             path="output/",
         )
 
@@ -167,17 +168,14 @@ def example_batch_s3_processing():
     try:
         # List of S3 files to process
         s3_files = [
-            "invoices/2024/Q1/invoice-001.pdf",
-            "invoices/2024/Q1/invoice-002.pdf",
-            "invoices/2024/Q1/invoice-003.pdf",
-            "invoices/2024/Q1/invoice-004.pdf",
-            "invoices/2024/Q1/invoice-005.pdf",
+            "input/1.pdf",
+            "input/2.pdf",
         ]
 
         # Create input connectors
         input_connectors = [
             S3InputConnector(
-                source_bucket="company-documents",
+                source_bucket="company-processed-byteit",
                 source_path_inside_bucket=path,
             )
             for path in s3_files
@@ -185,14 +183,12 @@ def example_batch_s3_processing():
 
         # Output connector (all results go here)
         output_connector = S3OutputConnector(
-            bucket="company-processed", path="invoices/2024/Q1/processed/"
+            bucket="company-processed-byteit", path="processed/"
         )
 
         print(f"\nProcessing {len(input_connectors)} files from S3...")
-        print(f"Source bucket: company-documents")
-        print(
-            f"Destination: s3://company-processed/invoices/2024/Q1/processed/"
-        )
+        print(f"Source bucket: company-processed-byteit")
+        print(f"Destination: s3://company-processed-byteit/processed/")
 
         # Create all jobs
         jobs = client.create_job(
@@ -210,6 +206,8 @@ def example_batch_s3_processing():
 
         # Wait for all jobs to complete
         for i, job in enumerate(jobs, 1):
+            # delay 1 second for local tests only (sqlite gets locked)
+            time.sleep(1)
             print(f"\nWaiting for job {i}/{len(jobs)} ({job.id})...")
             completed = client.wait_for_job(
                 job_id=job.id, poll_interval=5, max_wait_time=600
@@ -227,7 +225,7 @@ def example_batch_s3_processing():
         client.close()
 
 
-def example_mixed_local_s3():
+def example_local_to_s3():
     """
     Example 4: Mixed local and S3 usage.
 
@@ -257,11 +255,11 @@ def example_mixed_local_s3():
 
         # Output to S3
         output_connector = S3OutputConnector(
-            bucket="my-results", path="uploads/processed/"
+            bucket="company-processed-byteit", path="fromlocal/"
         )
 
         print(f"\nProcessing local file: {local_file}")
-        print(f"Will save to: s3://my-results/uploads/processed/")
+        print(f"Will save to: s3://company-processed-byteit/fromlocal/")
 
         job = client.create_job(
             input_connector=input_connector,
@@ -273,62 +271,6 @@ def example_mixed_local_s3():
 
         completed = client.wait_for_job(job.id, poll_interval=5)
         print(f"✓ Processing complete! Result saved to S3")
-
-    except ByteITError as e:
-        print(f"\nError: {e}")
-    finally:
-        client.close()
-
-
-def example_check_job_with_s3_output():
-    """
-    Example 5: Check job status and handle S3 output.
-    """
-    print("\n" + "=" * 60)
-    print("Example 5: Check Job with S3 Output")
-    print("=" * 60)
-
-    api_key = os.environ.get("BYTEIT_API_KEY")
-    if not api_key:
-        print("Error: BYTEIT_API_KEY environment variable not set")
-        return
-
-    job_id = input("\nEnter job ID to check: ").strip()
-    if not job_id:
-        print("No job ID provided")
-        return
-
-    client = ByteITClient(api_key=api_key)
-
-    try:
-        # Get job details
-        job = client.get_job(job_id=job_id)
-
-        print(f"\nJob ID: {job.id}")
-        print(f"Status: {job.processing_status}")
-        print(f"Created: {job.created_at}")
-
-        if job.metadata:
-            print(f"\nDocument Info:")
-            print(f"  Filename: {job.metadata.original_filename}")
-            print(f"  Type: {job.metadata.document_type}")
-            print(f"  Size: {job.metadata.file_size_bytes} bytes")
-
-        # Check output connector
-        if hasattr(job, "output_connector") and job.output_connector == "s3":
-            print(f"\nOutput Configuration: S3")
-            if hasattr(job, "output_connection_data"):
-                output_data = job.output_connection_data
-                print(f"  Bucket: {output_data.get('bucket', 'N/A')}")
-                print(f"  Path: {output_data.get('path', 'N/A')}")
-
-        if job.is_completed:
-            print("\n✓ Job completed successfully!")
-            print("Result is available in the configured S3 bucket.")
-        elif job.is_failed:
-            print(f"\n✗ Job failed: {job.processing_error}")
-        elif job.is_processing:
-            print("\n⚙ Job is still processing...")
 
     except ByteITError as e:
         print(f"\nError: {e}")
@@ -358,17 +300,15 @@ def main():
     print("2. S3 to S3 (server-to-server)")
     print("3. Batch S3 processing")
     print("4. Local to S3 (upload result)")
-    print("5. Check job with S3 output")
     print("0. Exit")
 
-    choice = input("\nEnter your choice (0-5): ").strip()
+    choice = input("\nEnter your choice (0-4): ").strip()
 
     examples = {
         "1": example_s3_to_local,
         "2": example_s3_to_s3,
         "3": example_batch_s3_processing,
-        "4": example_mixed_local_s3,
-        "5": example_check_job_with_s3_output,
+        "4": example_local_to_s3,
     }
 
     if choice == "0":
