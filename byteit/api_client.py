@@ -74,29 +74,6 @@ class ByteITClient:
         """Build full URL from path."""
         return f"{self.BASE_URL}/{path.lstrip('/')}"
 
-    def _get_csrf_token(self) -> str:
-        """
-        Get CSRF token from the server.
-
-        Returns:
-            CSRF token string
-        """
-        if self._csrf_token:
-            return self._csrf_token
-
-        try:
-            # Make a GET request to get CSRF cookie
-            response = self._session.get(f"{self.BASE_URL}/")
-            # Extract CSRF token from cookies
-            csrf_cookie = response.cookies.get(
-                "csrftoken"
-            ) or response.cookies.get("csrf_token")
-            if csrf_cookie:
-                self._csrf_token = csrf_cookie
-                return csrf_cookie
-        except Exception:
-            pass
-
         # Fallback: try to get from a dedicated endpoint
         try:
             response = self._session.get(f"{self.BASE_URL}/csrf/")
@@ -122,10 +99,9 @@ class ByteITClient:
         Raises:
             Various ByteITError subclasses based on status code
         """
-        # Initialize as Any so static checkers don't infer a union type from the branches
+
         data_raw: Any = {}
         try:
-            # Parse JSON response; response.json() is Any at runtime so keep raw first
             if response.content:
                 data_raw = response.json()
         except ValueError:
@@ -181,14 +157,6 @@ class ByteITClient:
         # If caller didn't provide a timeout, use the default per-method timeout
         kwargs.setdefault("timeout", self.DEFAULT_TIMEOUT)
 
-        # Add CSRF token for POST requests
-        if method.upper() == "POST":
-            csrf_token = self._get_csrf_token()
-            if csrf_token:
-                headers = kwargs.get("headers", {})
-                headers["X-CSRFToken"] = csrf_token
-                kwargs["headers"] = headers
-
         try:
             response = self._session.request(method, url, **kwargs)
             return self._handle_response(response)
@@ -234,7 +202,7 @@ class ByteITClient:
         connector_type = connector_config.get("type", "localfile")
 
         # Extract output_format from processing_options or use default
-        output_format = "txt"  # Default as per backend contract
+        output_format = "txt"
         clean_processing_options = {}
 
         if processing_options:
@@ -259,22 +227,19 @@ class ByteITClient:
         output_config = output_connector.to_dict()
         output_type = output_config.get("type")
 
-        if output_type and output_type != "byteit_storage":
-            # For S3 and other custom output connectors
-            data["output_connector"] = (
-                "s3" if output_type == "s3" else output_type
-            )
+        if output_type:
+            data["output_connector"] = output_type
             data["output_connection_data"] = json.dumps(output_config)
         else:
             # For default ByteIT storage, send empty output_connector
             data["output_connector"] = ""
-            data["output_connection_data"] = ""
+            data["output_connection_data"] = "{}"
 
         # Handle different input connector types
         files = None
         file_obj = None
 
-        if connector_type == "s3":
+        if connector_type != "localfile":
             # For S3 connector, send connection data (no file upload)
             filename, connection_data = input_connector.get_file_data()
             data["input_connection_data"] = json.dumps(connection_data)
@@ -401,10 +366,6 @@ class ByteITClient:
             ... ]
             >>> jobs = client.create_job(input_conns)
             >>> print(f"Created {len(jobs)} jobs")
-
-            Multiple files with SQLite backend (dev):
-            >>> # Use max_workers=1 to avoid SQLite database lock errors
-            >>> jobs = client.create_job(input_conns, max_workers=1)
         """
         # Handle single connector
         if isinstance(input_connector, InputConnector):
@@ -464,77 +425,6 @@ class ByteITClient:
             raise JobProcessingError(error_msg)
 
         return jobs
-
-    def _create_single_job(
-        self,
-        input_connector: InputConnector,
-        output_connector: Optional[OutputConnector],
-        processing_options: Optional[Dict[str, Any]],
-        nickname: Optional[str],
-        timeout: int,
-    ) -> Job:
-        """
-        Create a single job.
-
-        Args:
-            input_connector: Input connector
-            output_connector: Output connector
-            processing_options: Processing options
-            nickname: Job nickname
-            timeout: Request timeout
-
-        Returns:
-            Job object
-        """
-
-        # Get input connector info
-        input_config = input_connector.to_dict()
-        input_type = input_config.get("type")
-
-        # Build request data
-        data = {
-            "input_connector": input_type,
-        }
-
-        # Add input connection data for S3
-        if input_type == "s3":
-            _, connection_data = input_connector.get_file_data()
-            data["input_connection_data"] = json.dumps(connection_data)
-        # For local files, no input_connection_data (file would be uploaded separately)
-
-        # Add output connector
-        if output_connector:
-            output_config = output_connector.to_dict()
-
-            data["output_connector"] = "s3"
-            data["output_connection_data"] = json.dumps(output_config)
-        else:
-            data["output_connector"] = ""
-            data["output_connection_data"] = ""
-
-        # Add processing options
-        if processing_options:
-            # Extract output_format if present
-            output_format = processing_options.get("output_format")
-            if output_format:
-                data["output_format"] = output_format
-                # Remove from processing_options
-                clean_options = processing_options.copy()
-                clean_options.pop("output_format", None)
-                if clean_options:
-                    data["processing_options"] = json.dumps(clean_options)
-            else:
-                data["processing_options"] = json.dumps(processing_options)
-
-        # Add nickname
-        if nickname:
-            data["nickname"] = nickname
-
-        response = self._request(
-            "POST", f"{API_BASE}/{JOBS_PATH}/", data=data, timeout=timeout
-        )
-        job_data = response.get("job", response.get("document", response))
-        return Job.from_dict(job_data)
 
     def get_job(self, job_id: str, timeout: int = DEFAULT_TIMEOUT) -> Job:
         """
@@ -697,11 +587,6 @@ class ByteITClient:
 
         Raises:
             JobProcessingError: If job fails or times out
-
-        Example:
-            >>> job = client.create_job(file, "pdf")
-            >>> completed_job = client.wait_for_job(job.id)
-            >>> result = client.get_job_result(completed_job.id)
         """
         start_time = time.time()
 

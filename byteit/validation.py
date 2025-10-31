@@ -25,11 +25,6 @@ def validate_processing_options(options: Dict[str, Any]) -> None:
     Raises:
         ValidationError: If any unexpected fields are found
 
-    Example:
-        >>> options = {"ocr_model": "tesseract", "languages": ["en"]}
-        >>> validate_processing_options(options)  # OK
-        >>> options = {"invalid_field": "value"}
-        >>> validate_processing_options(options)  # Raises ValidationError
     """
     if not isinstance(options, dict):
         raise ValidationError(

@@ -18,15 +18,6 @@ class S3InputConnector(InputConnector):
         You must first create an AWS connection in ByteIT by providing an IAM
         role ARN that ByteIT can assume to access your S3 bucket.
 
-    Example:
-        >>> # First, set up AWS connection (one-time setup via ByteIT dashboard or API)
-        >>> # Then use the connector:
-        >>> connector = S3InputConnector(
-        ...     source_bucket="my-documents",
-        ...     source_path_inside_bucket="invoices/invoice-001.pdf"
-        ... )
-        >>> job = client.create_job(input_connector=connector)
-
     Note:
         The ByteIT server will use the IAM role configured in your AWS connection
         to access the S3 bucket. No AWS credentials are needed in your client code.

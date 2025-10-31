@@ -10,11 +10,11 @@ import os
 import sys
 from pathlib import Path
 
-# Add parent directory to path to import byteit
+# Add parent directory to path to import byteit (this is just for the local example, if you are actually using the installed library, you can skip this line)
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from byteit import ByteITClient
-from byteit.connectors import LocalFileInputConnector
+from byteit.connectors import LocalFileInputConnector, S3InputConnector
 
 
 def example_batch_create_jobs():
@@ -35,7 +35,7 @@ def example_batch_create_jobs():
         "sample_document3.pdf",
     ]  # Add more files here
 
-    # Filter to only existing files
+    # Filter to only existing local files
     existing_files = [f for f in sample_files if Path(f).exists()]
 
     if not existing_files:
@@ -45,15 +45,19 @@ def example_batch_create_jobs():
         return
 
     with ByteITClient(api_key=api_key) as client:
-        # Create input connectors for each file
+        # Create input connectors for each file. You can even mix connectors here:
         input_connectors = [
             LocalFileInputConnector(file_path) for file_path in existing_files
+        ] + [
+            S3InputConnector(
+                source_bucket="tradybg-images",
+                source_path_inside_bucket="1.pdf",
+            )
         ]
 
         print(f"\nCreating {len(input_connectors)} jobs concurrently...")
 
-        # For PostgreSQL (production):
-        jobs = client.create_job(input_connectors)
+        jobs = client.create_job(input_connectors, max_workers=1)
 
         print(f"✓ Created {len(jobs)} jobs successfully!\n")
 
@@ -61,7 +65,6 @@ def example_batch_create_jobs():
             print(f"Job {i + 1}:")
             print(f"  ID: {job.id}")
             print(f"  Status: {job.processing_status}")
-            print(f"  File: {existing_files[i]}")
             print()
 
 

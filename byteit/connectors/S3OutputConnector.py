@@ -16,16 +16,6 @@ class S3OutputConnector(OutputConnector):
         You must first create an AWS connection in ByteIT by providing an IAM
         role ARN that ByteIT can assume to access your S3 bucket.
 
-    Example:
-        >>> connector = S3OutputConnector(
-        ...     bucket="my-results-bucket",
-        ...     path="processed/"  # Results will be saved under this prefix
-        ... )
-        >>> job = client.create_job(
-        ...     input_connector=input_conn,
-        ...     output_connector=connector
-        ... )
-
     Note:
         The ByteIT server will use the IAM role configured in your AWS connection
         to write to the S3 bucket. No AWS credentials are needed in your client code.
@@ -42,8 +32,6 @@ class S3OutputConnector(OutputConnector):
         Args:
             bucket: S3 bucket name where results will be saved
             path: path prefix within the bucket (e.g., "results/" or "processed/2024/").
-                 The actual filename will be appended by the server.
-                 Leave empty to save in the bucket root.
         """
         self.bucket = bucket
         self.path = (
@@ -56,9 +44,10 @@ class S3OutputConnector(OutputConnector):
 
         Returns:
             Dictionary with connector type and configuration matching API format:
-            {"bucket": "bucket-name", "path": "output/path/"}
+            {"type": "s3", "bucket": "bucket-name", "path": "output/path/"}
         """
         return {
+            "type": "s3",
             "bucket": self.bucket,
             "path": self.path,
         }

@@ -12,11 +12,6 @@ class LocalFileInputConnector(InputConnector):
 
     This connector reads files from the local filesystem and uploads them
     to ByteIT for processing.
-
-    Example:
-        >>> connector = LocalFileInputConnector("document.pdf")
-        >>> # Or with explicit file type
-        >>> connector = LocalFileInputConnector("document.xyz", file_type="pdf")
     """
 
     def __init__(self, file_path: str):
@@ -53,6 +48,6 @@ class LocalFileInputConnector(InputConnector):
             Dictionary with connector type and configuration
         """
         return {
-            "type": "local_file",
+            "type": "localfile",
             "path": str(self.file_path),
         }

@@ -29,6 +29,4 @@ class ByteITStorageOutputConnector(OutputConnector):
         Returns:
             Dictionary with connector type
         """
-        return {
-            "type": "byteit_storage",
-        }
+        return {}
