@@ -319,7 +319,7 @@ results = client.process_document(input_conns, output_path=["out1.txt", "out2.tx
 - Use context managers for client lifecycle.
 - Validate inputs before processing.
 - Handle exceptions appropriately.
-- For batch jobs, set [`max_workers=1`](byteit/api_client.py ) if using SQLite backend.
+- For batch jobs
 - Follow PEP 8 and include docstrings/type hints as per Python instructions.
 
 For more details, refer to the source code in [`byteit`](byteit ).
