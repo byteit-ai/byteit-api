@@ -474,7 +474,8 @@ class ByteITClient:
             "GET", f"{API_BASE}/{JOBS_PATH}/", params=params, timeout=timeout
         )
 
-        jobs = [Job.from_dict(doc) for doc in response.get("documents", [])]
+        jobs_data = response.get("jobs", response.get("documents", []))
+        jobs = [Job.from_dict(doc) for doc in jobs_data]
         return JobList(
             jobs=jobs,
             count=response.get("count", len(jobs)),

@@ -29,11 +29,16 @@ class Job:
     owner_user_id: Optional[str] = None
     file_data: Optional[str] = None
     file_hash: Optional[str] = None
+    nickname: Optional[str] = None
     metadata: Optional[DocumentMetadata] = None
     processing_options: Optional[Dict[str, Any]] = None
     processing_error: Optional[str] = None
     storage_path: Optional[str] = None
     result_path: Optional[str] = None
+    input_connector: Optional[str] = None
+    input_connection_data: Optional[Dict[str, Any]] = None
+    output_connector: Optional[str] = None
+    output_connection_data: Optional[Dict[str, Any]] = None
     started_processing_at: Optional[datetime] = None
     finished_processing_at: Optional[datetime] = None
 
@@ -116,11 +121,16 @@ class Job:
             owner_user_id=data.get("owner_user_id"),
             file_data=data.get("file_data"),
             file_hash=data.get("file_hash"),
+            nickname=data.get("nickname"),
             metadata=metadata,
             processing_options=processing_options,
             processing_error=data.get("processing_error"),
             storage_path=data.get("storage_path"),
             result_path=data.get("result_path"),
+            input_connector=data.get("input_connector"),
+            input_connection_data=data.get("input_connection_data"),
+            output_connector=data.get("output_connector"),
+            output_connection_data=data.get("output_connection_data"),
             started_processing_at=started_processing_at,
             finished_processing_at=finished_processing_at,
         )
