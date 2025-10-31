@@ -127,7 +127,7 @@ def example_with_processing_options():
         processing_options = {
             "output_format": "md",  # Output in Markdown format
             "ocr_model": "tesseractocr",  # Use Tesseract OCR
-            "languages": ["eng", "deu"],  # Process English and German
+            "languages": ["en", "de"],  # Process English and German
             "page_range": "1-5",  # Only process first 5 pages
         }
 
@@ -193,9 +193,7 @@ def example_upload_only():
             print("\nOCR Model:")
             print("  - tesseractocr (Tesseract OCR)")
             print("  - easyocr (EasyOCR)")
-            ocr_model = input("OCR model [tesseractocr]: ").strip()
-            if not ocr_model:
-                ocr_model = "tesseractocr"
+            ocr_model = input("OCR model: ").strip()
 
             # VLM model
             print("\nVision-Language Model:")
@@ -204,18 +202,15 @@ def example_upload_only():
 
             # Languages
             print("\nLanguages (comma-separated):")
-            print(
-                "  Examples: eng, deu, fra, spa, ita, por, rus, jpn, kor, chi_sim"
-            )
-            print("  For multiple: eng,deu,fra")
-            languages_input = input("Languages [eng]: ").strip()
-            if not languages_input:
-                languages_input = "eng"
+            print("  Examples: en, de, fr, sp, bg, ru")
+            print("  For multiple: en,de,fr")
+            languages_input = input("Languages: ").strip()
             languages = [lang.strip() for lang in languages_input.split(",")]
 
             # Page range
             print("\nPage Range (Leave blank for all):")
-            print("  Examples: 1-5, 1,3,5-10")
+            print("\nExample: 1-5")
+            print("\nExample Single Page: 3")
             page_range = input("Page range (Leave blank for all): ").strip()
             if not page_range:
                 page_range = ""

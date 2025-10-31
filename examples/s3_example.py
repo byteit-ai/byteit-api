@@ -200,7 +200,7 @@ def example_batch_s3_processing():
             output_connector=output_connector,
             processing_options={
                 "output_format": "json",
-                "languages": ["eng"],
+                "languages": ["en"],
                 "ocr_model": "tesseractocr",
             },
             max_workers=5,  # Process up to 5 concurrently
