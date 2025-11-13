@@ -1,7 +1,7 @@
 """Data models for ByteIT API responses."""
 
 from dataclasses import dataclass
-from Job import Job
+from byteit.models.Job import Job
 
 
 @dataclass

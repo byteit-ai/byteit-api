@@ -10,7 +10,6 @@ class DocumentMetadata:
 
     original_filename: str
     document_type: str
-    file_size_bytes: Optional[int] = None
     page_count: Optional[int] = None
     language: str = "en"
     encoding: str = "utf-8"

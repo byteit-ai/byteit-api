@@ -2,8 +2,8 @@
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, Optional
-from DocumentMetadata import DocumentMetadata
+from typing import Any, Dict, Optional, cast
+from byteit.models.DocumentMetadata import DocumentMetadata
 
 
 @dataclass
@@ -81,14 +81,13 @@ class Job:
         # Parse metadata
         metadata = None
         if data.get("metadata") and isinstance(data["metadata"], dict):
-            metadata_dict = data["metadata"]
+            metadata_dict = cast(Dict[str, Any], data["metadata"])
             try:
                 metadata = DocumentMetadata(
                     original_filename=metadata_dict.get(
                         "original_filename", ""
                     ),
                     document_type=metadata_dict.get("document_type", ""),
-                    file_size_bytes=metadata_dict.get("file_size_bytes"),
                     page_count=metadata_dict.get("page_count"),
                     language=metadata_dict.get("language", "en"),
                     encoding=metadata_dict.get("encoding", "utf-8"),
