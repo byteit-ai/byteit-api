@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, Optional, cast
 from byteit.models.DocumentMetadata import DocumentMetadata
+from byteit.models.ProcessingOptions import ProcessingOptions
 
 
 @dataclass
@@ -20,7 +21,7 @@ class Job:
     file_hash: Optional[str] = None
     nickname: Optional[str] = None
     metadata: Optional[DocumentMetadata] = None
-    processing_options: Optional[Dict[str, Any]] = None
+    processing_options: Optional[ProcessingOptions] = None
     processing_error: Optional[str] = None
     storage_path: Optional[str] = None
     result_path: Optional[str] = None
@@ -97,8 +98,15 @@ class Job:
                 print(f"Warning: Failed to parse metadata: {e}")
                 metadata = None
 
-        # Parse processing options (keep as dict)
-        processing_options = data.get("processing_options")
+        # Parse processing options
+        processing_options = None
+        processing_options_data = data.get("processing_options")
+        if processing_options_data and isinstance(
+            processing_options_data, dict
+        ):
+            processing_options = ProcessingOptions.from_dict(
+                processing_options_data
+            )
 
         return cls(
             id=data["id"],

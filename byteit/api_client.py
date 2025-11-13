@@ -27,7 +27,7 @@ from .exceptions import (
 )
 from .models.Job import Job
 from .models.JobList import JobList
-from .validations import validate_processing_options
+from .models.ProcessingOptions import ProcessingOptions
 
 # API path constants so endpoints can be changed in one place
 API_VERSION = "v1"
@@ -151,7 +151,7 @@ class ByteITClient:
         self,
         input_connector: InputConnector,
         output_connector: Optional[OutputConnector] = None,
-        processing_options: Optional[Dict[str, Any]] = None,
+        processing_options: Optional[ProcessingOptions] = None,
         nickname: Optional[str] = None,
         timeout: int = DEFAULT_TIMEOUT,
     ) -> Job:
@@ -161,10 +161,9 @@ class ByteITClient:
         Args:
             input_connector: Input connector providing file data
             output_connector: Output connector for result storage
-            processing_options: Optional processing configuration dict
+            processing_options: Optional processing configuration (ProcessingOptions object)
             nickname: Optional nickname for the job
             timeout: Request timeout in seconds
-            max_retries: Maximum number of retries for database lock errors
 
         Returns:
             Job object with initial job information
@@ -173,9 +172,10 @@ class ByteITClient:
         if output_connector is None:
             output_connector = ByteITStorageOutputConnector()
 
-        # Validate processing options if provided
-        if processing_options:
-            validate_processing_options(processing_options)
+        # Convert ProcessingOptions to dict if provided
+        options_dict: Optional[Dict[str, Any]] = None
+        if processing_options is not None:
+            options_dict = processing_options.to_dict()
 
         # Get connector configuration
         connector_config = input_connector.to_dict()
@@ -185,11 +185,11 @@ class ByteITClient:
 
         # Extract output_format from processing_options or use default
         output_format = "txt"
-        clean_processing_options = {}
+        clean_processing_options: Dict[str, Any] = {}
 
-        if processing_options:
+        if options_dict:
             # Make a copy to avoid modifying the original
-            clean_processing_options = processing_options.copy()
+            clean_processing_options = options_dict.copy()
             # Extract output_format if present
             if "output_format" in clean_processing_options:
                 output_format = clean_processing_options.pop("output_format")
@@ -256,7 +256,7 @@ class ByteITClient:
         self,
         input_connector: Union[InputConnector, List[InputConnector]],
         output_connector: Optional[OutputConnector] = None,
-        processing_options: Optional[Dict[str, Any]] = None,
+        processing_options: Optional[ProcessingOptions] = None,
         nickname: Optional[str] = None,
         timeout: int = DEFAULT_TIMEOUT,
         max_workers: int = 5,
@@ -267,12 +267,11 @@ class ByteITClient:
         Args:
             input_connector: Single InputConnector or list of InputConnectors
             output_connector: Output connector for result storage (default: ByteITStorageOutputConnector)
-            processing_options: Optional processing configuration dict with keys:
+            processing_options: Optional processing configuration (ProcessingOptions object) with fields:
                 - ocr_model: OCR model to use
-                - vlm_model: Vision-Language model to use
                 - languages: List of languages to detect/process
                 - page_range: Page range to process (e.g., "1-5", "all")
-                - output_format: Output format (json, txt, md, html)
+                - output_format: Output format (txt, json, md, html)
             nickname: Optional nickname for the job (for easier identification)
             timeout: Request timeout in seconds
             max_workers: Maximum number of concurrent workers for batch processing (default: 5)
@@ -511,7 +510,7 @@ class ByteITClient:
         self,
         input_connector: Union[InputConnector, List[InputConnector]],
         output_connector: Optional[OutputConnector] = None,
-        processing_options: Optional[Dict[str, Any]] = None,
+        processing_options: Optional[ProcessingOptions] = None,
         nickname: Optional[str] = None,
         output_path: Optional[Union[str, Path, List[Union[str, Path]]]] = None,
         poll_interval: int = 5,
@@ -525,7 +524,7 @@ class ByteITClient:
         Args:
             input_connector: Single InputConnector or list of InputConnectors
             output_connector: Output connector for result storage (default: ByteITStorageOutputConnector)
-            processing_options: Optional processing configuration dict
+            processing_options: Optional processing configuration (ProcessingOptions object)
             nickname: Optional nickname for the job (for easier identification)
             output_path: Optional path(s) to save result(s). Can be:
                 - Single path (str/Path) when processing one file
@@ -543,7 +542,7 @@ class ByteITClient:
         # Handle single connector
         if isinstance(input_connector, InputConnector):
             # Create job
-            job = self.create_job(
+            job_result = self.create_job(
                 input_connector,
                 output_connector,
                 processing_options,
@@ -551,14 +550,22 @@ class ByteITClient:
                 timeout,
             )
 
+            # Type narrowing: we know it's a single Job
+            if not isinstance(job_result, Job):
+                raise RuntimeError("Expected single Job from create_job")
+
             # Wait for completion
-            self.wait_for_job(job.id, poll_interval, max_wait_time, timeout)
+            self.wait_for_job(
+                job_result.id, poll_interval, max_wait_time, timeout
+            )
 
             # Get result
             single_output_path = (
                 output_path if not isinstance(output_path, list) else None
             )
-            return self.get_job_result(job.id, single_output_path, timeout)
+            return self.get_job_result(
+                job_result.id, single_output_path, timeout
+            )
 
         # Handle list of connectors
         if not input_connector:

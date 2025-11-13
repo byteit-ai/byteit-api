@@ -8,7 +8,6 @@ from .exceptions import ValidationError
 # Expected processing option fields
 VALID_PROCESSING_OPTIONS: Set[str] = {
     "ocr_model",
-    "vlm_model",
     "languages",
     "page_range",
     "output_format",

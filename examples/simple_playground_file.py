@@ -12,7 +12,7 @@ from byteit.connectors import (
 )
 
 client = ByteITClient(
-    api_key="36348b5a-3688-46a0-a735-6bd81965a266.26ee01dd17e93b907d3cb3a92ed46ac0398a124ea5eca1ff2cbc4fd4f613dcb3"
+    api_key="5210fd96-aacd-4792-8326-2ffe9acd2ed9.424d59ee375ca6d42e5826d98b5105fa3504234cf9fe08a457e54381253446e9"
 )
 
 client.create_job(

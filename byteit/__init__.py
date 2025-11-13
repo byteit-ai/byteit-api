@@ -15,6 +15,8 @@ from .exceptions import (
 from .models.Job import Job
 from .models.JobList import JobList
 from .models.DocumentMetadata import DocumentMetadata
+from .models.ProcessingOptions import ProcessingOptions
+from .models.OutputFormat import OutputFormat
 from .connectors import (
     InputConnector,
     OutputConnector,
@@ -30,6 +32,8 @@ __all__ = [
     "Job",
     "JobList",
     "DocumentMetadata",
+    "ProcessingOptions",
+    "OutputFormat",
     "InputConnector",
     "OutputConnector",
     "LocalFileInputConnector",
