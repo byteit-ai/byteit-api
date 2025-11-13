@@ -235,11 +235,6 @@ class ByteITClient:
                 f"Unsupported input connector type: {connector_type}"
             )
 
-        # Close file object after request is done
-        if file_obj is not None and hasattr(file_obj, "close"):
-            if not file_obj.closed:
-                file_obj.close()
-
         response = self._request(
             "POST",
             f"{API_BASE}/{JOBS_PATH}/",
@@ -247,6 +242,11 @@ class ByteITClient:
             data=data,
             timeout=timeout,
         )
+
+        # Close file object after request is done
+        if file_obj is not None and hasattr(file_obj, "close"):
+            if not file_obj.closed:
+                file_obj.close()
 
         # Extract job from response
         job_data = response.get("document", {}) or response.get("job", {})
