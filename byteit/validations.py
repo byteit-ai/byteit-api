@@ -26,11 +26,6 @@ def validate_processing_options(options: Dict[str, Any]) -> None:
         ValidationError: If any unexpected fields are found
 
     """
-    if not isinstance(options, dict):
-        raise ValidationError(
-            f"processing_options must be a dictionary, got {type(options).__name__}"
-        )
-
     unexpected_fields: List[str] = []
     for field in options.keys():
         if field not in VALID_PROCESSING_OPTIONS:

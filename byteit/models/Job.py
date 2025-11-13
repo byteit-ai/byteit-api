@@ -1,20 +1,9 @@
-"""Data models for ByteIT API responses."""
+"""Data model for ByteIT Job."""
 
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, Optional
-
-
-@dataclass
-class DocumentMetadata:
-    """Metadata information about a document."""
-
-    original_filename: str
-    document_type: str
-    file_size_bytes: Optional[int] = None
-    page_count: Optional[int] = None
-    language: str = "en"
-    encoding: str = "utf-8"
+from DocumentMetadata import DocumentMetadata
 
 
 @dataclass
@@ -134,12 +123,3 @@ class Job:
             started_processing_at=started_processing_at,
             finished_processing_at=finished_processing_at,
         )
-
-
-@dataclass
-class JobList:
-    """List of jobs with metadata."""
-
-    jobs: list[Job]
-    count: int
-    detail: str
