@@ -50,8 +50,8 @@ def example_batch_create_jobs():
             LocalFileInputConnector(file_path) for file_path in existing_files
         ] + [
             S3InputConnector(
-                source_bucket="tradybg-images",
-                source_path_inside_bucket="1.pdf",
+                source_bucket="company-processed-byteit",
+                source_path_inside_bucket="input/1.pdf",
             )
         ]
 

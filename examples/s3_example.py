@@ -202,7 +202,6 @@ def example_batch_s3_processing():
         options = ProcessingOptions(
             output_format=OutputFormat.JSON,
             languages=["en"],
-            ocr_model="tesseractocr",
         )
 
         # Create all jobs

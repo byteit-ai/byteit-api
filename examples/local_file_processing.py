@@ -126,15 +126,13 @@ def example_with_processing_options():
         # Define custom processing options using ProcessingOptions class
         processing_options = ProcessingOptions(
             output_format=OutputFormat.MD,  # Output in Markdown format
-            ocr_model="tesseractocr",  # Use Tesseract OCR
             languages=["en", "de"],  # Process English and German
             page_range="1-5",  # Only process first 5 pages
         )
 
         print(f"\nProcessing file: {input_file}")
         print(
-            f"Options: OCR={processing_options.ocr_model}, "
-            f"Format={processing_options.output_format.value}, "
+            f"Options: Format={processing_options.output_format.value}, "
             f"Languages={processing_options.languages}, "
             f"Pages={processing_options.page_range}"
         )
@@ -194,12 +192,6 @@ def example_upload_only():
             if not output_format_str:
                 output_format_str = "txt"
 
-            # OCR model
-            print("\nOCR Model:")
-            print("  - tesseractocr (Tesseract OCR)")
-            print("  - easyocr (EasyOCR)")
-            ocr_model = input("OCR model: ").strip()
-
             # Languages
             print("\nLanguages (comma-separated):")
             print("  Examples: en, de, fr, sp, bg, ru")
@@ -220,15 +212,13 @@ def example_upload_only():
             # Build ProcessingOptions object
             processing_options = ProcessingOptions(
                 output_format=output_format_str,
-                ocr_model=ocr_model,
-                languages=languages,
+                languages=languages if languages else ["en"],
                 page_range=page_range,
             )
 
             print("\n" + "-" * 60)
             print("Processing options configured:")
             print(f"  output_format: {processing_options.output_format.value}")
-            print(f"  ocr_model: {processing_options.ocr_model}")
             print(f"  languages: {processing_options.languages}")
             print(f"  page_range: {processing_options.page_range}")
             print("-" * 60)

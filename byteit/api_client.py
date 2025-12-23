@@ -248,8 +248,14 @@ class ByteITClient:
             if not file_obj.closed:
                 file_obj.close()
 
-        # Extract job from response
-        job_data = response.get("document", {}) or response.get("job", {})
+        # Handle API response format: {detail, job_id, processing_status}
+        if "job_id" in response:
+            job_id = response["job_id"]
+            return self.get_job(job_id=job_id, timeout=timeout)
+
+        # Try to extract job data from response
+        job_data = response.get("job")
+
         return Job.from_dict(job_data)
 
     def create_job(
@@ -268,10 +274,9 @@ class ByteITClient:
             input_connector: Single InputConnector or list of InputConnectors
             output_connector: Output connector for result storage (default: ByteITStorageOutputConnector)
             processing_options: Optional processing configuration (ProcessingOptions object) with fields:
-                - ocr_model: OCR model to use
-                - languages: List of languages to detect/process
+                - languages: List of languages to detect/process (e.g., ["en", "de"])
                 - page_range: Page range to process (e.g., "1-5", "all")
-                - output_format: Output format (txt, json, md, html)
+                - output_format: Output format (txt, json, md, html) - sent as top-level param
             nickname: Optional nickname for the job (for easier identification)
             timeout: Request timeout in seconds
             max_workers: Maximum number of concurrent workers for batch processing (default: 5)
@@ -440,14 +445,17 @@ class ByteITClient:
             data = self._handle_response(response)
             # Job not ready yet
             if not data.get("ready", False):
+                status = data.get("processing_status", "unknown")
                 raise JobProcessingError(
-                    f"Job is not ready yet. Status: {data.get('processing_status')}",
+                    f"Result not available. Job status: {status}. "
+                    f"Use wait_for_job() to wait for completion before downloading.",
                     response.status_code,
                     data,
                 )
-            # If we get here with JSON, something unexpected happened
+            # If we get here with JSON and ready=True but no file, something is wrong
             raise JobProcessingError(
-                f"Unexpected JSON response: {data}",
+                "Job is ready but no result file was returned. "
+                "This may indicate a server-side issue.",
                 response.status_code,
                 data,
             )

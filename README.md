@@ -130,7 +130,10 @@ Creates one or more processing jobs.
 - **Parameters**:
   - [`input_connector`](byteit/api_client.py ) (InputConnector or List[InputConnector]): Source connector(s) (required).
   - [`output_connector`](byteit/api_client.py ) (OutputConnector): Destination connector (optional, defaults to ByteITStorageOutputConnector).
-  - [`processing_options`](byteit/api_client.py ) (Dict[str, Any]): Processing settings (optional). Valid keys: [`ocr_model`](examples/local_file_processing.py ), [`vlm_model`](examples/local_file_processing.py ), [`languages`](examples/local_file_processing.py ), [`page_range`](examples/local_file_processing.py ), [`output_format`](byteit/api_client.py ).
+  - [`processing_options`](byteit/api_client.py ) (ProcessingOptions): Processing settings (optional). Valid fields:
+    - `languages` (List[str]): Languages to detect/process, e.g., ["en", "de"].
+    - `page_range` (str): Page range to process, e.g., "1-5".
+    - `output_format` (OutputFormat or str): Output format (txt, json, md, html). Sent as top-level parameter.
   - [`nickname`](byteit/api_client.py ) (str): Job nickname for identification (optional).
   - [`timeout`](byteit/api_client.py ) (int): Request timeout in seconds (optional, defaults to 30).
   - [`max_workers`](byteit/api_client.py ) (int): Concurrent workers for batch processing (optional, defaults to 5).
@@ -140,9 +143,15 @@ Creates one or more processing jobs.
 
 - **Example**:
   ```python
+  from byteit import ProcessingOptions, OutputFormat
+
+  options = ProcessingOptions(
+      languages=["en"],
+      output_format=OutputFormat.TXT
+  )
   job = client.create_job(
       input_connector=input_connector,
-      processing_options={"output_format": "txt", "languages": ["en"]}
+      processing_options=options
   )
   ```
 
@@ -221,7 +230,7 @@ Convenience method: Creates job, waits, and retrieves result.
 - **Parameters**:
   - [`input_connector`](byteit/api_client.py ) (InputConnector or List[InputConnector]): Source connector(s) (required).
   - [`output_connector`](byteit/api_client.py ) (OutputConnector): Destination connector (optional).
-  - [`processing_options`](byteit/api_client.py ) (Dict[str, Any]): Processing settings (optional).
+  - [`processing_options`](byteit/api_client.py ) (ProcessingOptions): Processing settings (optional).
   - [`nickname`](byteit/api_client.py ) (str): Job nickname (optional).
   - [`output_path`](byteit/api_client.py ) (str, Path, or List): Path(s) to save result(s) (optional).
   - [`poll_interval`](byteit/api_client.py ) (int): Poll interval (optional, defaults to 5).
@@ -234,21 +243,37 @@ Convenience method: Creates job, waits, and retrieves result.
 
 - **Example**:
   ```python
+  from byteit import ProcessingOptions, OutputFormat
+
+  options = ProcessingOptions(output_format=OutputFormat.MD)
   result = client.process_document(
       input_connector=input_connector,
+      processing_options=options,
       output_path="output.md"
   )
   ```
 
 ## Processing Options
 
-Valid keys in [`processing_options`](byteit/api_client.py ):
+Use the `ProcessingOptions` class to configure document processing:
 
-- [`ocr_model`](examples/local_file_processing.py ) (str): OCR model, e.g., "tesseractocr" or "easyocr".
-- [`vlm_model`](examples/local_file_processing.py ) (str): Vision-Language model, e.g., "smoldoc".
-- [`languages`](examples/local_file_processing.py ) (List[str]): Languages, e.g., ["en", "de"].
-- [`page_range`](examples/local_file_processing.py ) (str): Page range, e.g., "1-5".
-- [`output_format`](byteit/api_client.py ) (str): Format, e.g., "txt", "md", "json", "html".
+```python
+from byteit import ProcessingOptions, OutputFormat
+
+options = ProcessingOptions(
+    languages=["en", "de"],  # Languages to detect/process
+    page_range="1-5",        # Page range to process (optional)
+    output_format=OutputFormat.MD  # Output format (txt, md, json, html)
+)
+```
+
+**Valid fields:**
+
+- `languages` (List[str]): Languages to detect/process, e.g., ["en", "de"]. Default: ["en"].
+- `page_range` (str): Page range to process, e.g., "1-5" or "all". Default: "" (all pages).
+- `output_format` (OutputFormat or str): Output format. Valid values: "txt", "md", "json", "html". Default: "txt".
+
+**Note:** The `output_format` is automatically extracted and sent as a top-level parameter to the API.
 
 ## Error Handling
 
