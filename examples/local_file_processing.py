@@ -9,7 +9,7 @@ from pathlib import Path
 # Parent directory to path to import byteit
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from byteit import ByteITClient
+from byteit import ByteITClient, ProcessingOptions, OutputFormat
 from byteit.connectors import (
     LocalFileInputConnector,
     ByteITStorageOutputConnector,
@@ -103,7 +103,7 @@ def example_basic_processing():
 
 
 def example_with_processing_options():
-    """Example with custom processing options."""
+    """Example with custom processing options using ProcessingOptions class."""
     print("\n" + "=" * 60)
     print("Example 2: Processing with Custom Options")
     print("=" * 60)
@@ -123,16 +123,19 @@ def example_with_processing_options():
 
         input_connector = LocalFileInputConnector(file_path=input_file)
 
-        # Define custom processing options
-        processing_options = {
-            "output_format": "md",  # Output in Markdown format
-            "ocr_model": "tesseractocr",  # Use Tesseract OCR
-            "languages": ["en", "de"],  # Process English and German
-            "page_range": "1-5",  # Only process first 5 pages
-        }
+        # Define custom processing options using ProcessingOptions class
+        processing_options = ProcessingOptions(
+            output_format=OutputFormat.MD,  # Output in Markdown format
+            languages=["en", "de"],  # Process English and German
+            page_range="1-5",  # Only process first 5 pages
+        )
 
         print(f"\nProcessing file: {input_file}")
-        print(f"Options: {processing_options}")
+        print(
+            f"Options: Format={processing_options.output_format.value}, "
+            f"Languages={processing_options.languages}, "
+            f"Pages={processing_options.page_range}"
+        )
 
         # Use the convenience method that handles creation, waiting, and result retrieval
         result_path = client.process_document(
@@ -154,7 +157,7 @@ def example_with_processing_options():
 def example_upload_only():
     """Example: Upload a file and create a job without waiting."""
     print("\n" + "=" * 60)
-    print("Example 3: Upload File Only (Create Job)")
+    print("Example 4: Upload File Only (Create Job)")
     print("=" * 60)
 
     api_key = os.environ.get("BYTEIT_API_KEY")
@@ -183,54 +186,41 @@ def example_upload_only():
             print("-" * 60)
 
             # Output format
-            output_format = input(
+            output_format_str = input(
                 "Output format (txt/md/json/html) [txt]: "
             ).strip()
-            if not output_format:
-                output_format = "txt"
-
-            # OCR model
-            print("\nOCR Model:")
-            print("  - tesseractocr (Tesseract OCR)")
-            print("  - easyocr (EasyOCR)")
-            ocr_model = input("OCR model: ").strip()
-
-            # VLM model
-            print("\nVision-Language Model:")
-            print("  - smoldoc (SmolDoc)")
-            vlm_model = input("VLM model (optional): ").strip()
+            if not output_format_str:
+                output_format_str = "txt"
 
             # Languages
             print("\nLanguages (comma-separated):")
             print("  Examples: en, de, fr, sp, bg, ru")
             print("  For multiple: en,de,fr")
             languages_input = input("Languages: ").strip()
-            languages = [lang.strip() for lang in languages_input.split(",")]
+            languages = [
+                lang.strip()
+                for lang in languages_input.split(",")
+                if lang.strip()
+            ]
 
             # Page range
             print("\nPage Range (Leave blank for all):")
             print("\nExample: 1-5")
             print("\nExample Single Page: 3")
             page_range = input("Page range (Leave blank for all): ").strip()
-            if not page_range:
-                page_range = ""
 
-            # Build processing options dictionary
-            processing_options = {
-                "output_format": output_format,
-                "ocr_model": ocr_model,
-                "languages": languages,
-                "page_range": page_range,
-            }
-
-            # Only add VLM model if specified
-            if vlm_model:
-                processing_options["vlm_model"] = vlm_model
+            # Build ProcessingOptions object
+            processing_options = ProcessingOptions(
+                output_format=output_format_str,
+                languages=languages if languages else ["en"],
+                page_range=page_range,
+            )
 
             print("\n" + "-" * 60)
             print("Processing options configured:")
-            for key, value in processing_options.items():
-                print(f"  {key}: {value}")
+            print(f"  output_format: {processing_options.output_format.value}")
+            print(f"  languages: {processing_options.languages}")
+            print(f"  page_range: {processing_options.page_range}")
             print("-" * 60)
 
         print(f"\nUploading file: {input_file}")
@@ -263,7 +253,7 @@ def example_upload_only():
 def example_download_result():
     """Example: Download result for a completed job."""
     print("\n" + "=" * 60)
-    print("Example 4: Download Result Only")
+    print("Example 5: Download Result Only")
     print("=" * 60)
 
     api_key = os.environ.get("BYTEIT_API_KEY")
@@ -345,7 +335,7 @@ def example_download_result():
 def example_list_jobs():
     """Example showing how to list jobs."""
     print("\n" + "=" * 60)
-    print("Example 5: Listing Jobs")
+    print("Example 6: Listing Jobs")
     print("=" * 60)
 
     api_key = os.environ.get("BYTEIT_API_KEY")
@@ -386,7 +376,7 @@ def example_list_jobs():
 def example_check_job_status():
     """Example showing how to check a specific job's status."""
     print("\n" + "=" * 60)
-    print("Example 6: Checking Job Status")
+    print("Example 7: Checking Job Status")
     print("=" * 60)
 
     api_key = os.environ.get("BYTEIT_API_KEY")
@@ -415,14 +405,12 @@ def example_check_job_status():
                 print(f"\nDocument Info:")
                 print(f"  Filename: {job.metadata.original_filename}")
                 print(f"  Type: {job.metadata.document_type}")
-                print(f"  Size: {job.metadata.file_size_bytes} bytes")
                 if job.metadata.page_count:
                     print(f"  Pages: {job.metadata.page_count}")
 
             if job.processing_options:
                 print(f"\nProcessing Options:")
-                for key, value in job.processing_options.items():
-                    print(f"  {key}: {value}")
+                print(job.processing_options)
 
             if job.is_completed:
                 print("\n✓ Job is completed and ready for download!")

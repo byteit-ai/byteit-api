@@ -12,14 +12,18 @@ from .exceptions import (
     ServerError,
     ValidationError,
 )
-from .models import Job, JobList, DocumentMetadata
+from .models.Job import Job
+from .models.JobList import JobList
+from .models.DocumentMetadata import DocumentMetadata
+from .models.ProcessingOptions import ProcessingOptions
+from .models.OutputFormat import OutputFormat
 from .connectors import (
     InputConnector,
     OutputConnector,
     LocalFileInputConnector,
     ByteITStorageOutputConnector,
 )
-from .validation import validate_processing_options
+from .validations import validate_processing_options
 
 __version__ = "0.1.0"
 
@@ -28,6 +32,8 @@ __all__ = [
     "Job",
     "JobList",
     "DocumentMetadata",
+    "ProcessingOptions",
+    "OutputFormat",
     "InputConnector",
     "OutputConnector",
     "LocalFileInputConnector",

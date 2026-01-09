@@ -2,14 +2,18 @@
 
 import json
 import time
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, cast, Type
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+from types import TracebackType
+from typing import Any, Dict, List, Optional, Type, Union, cast
 
 import requests
 
-from types import TracebackType
-
+from .connectors import (
+    ByteITStorageOutputConnector,
+    InputConnector,
+    OutputConnector,
+)
 from .exceptions import (
     APIKeyError,
     AuthenticationError,
@@ -21,14 +25,9 @@ from .exceptions import (
     ServerError,
     ValidationError,
 )
-from .models import Job, JobList
-from .connectors import (
-    InputConnector,
-    OutputConnector,
-    ByteITStorageOutputConnector,
-)
-from .validation import validate_processing_options
-
+from .models.Job import Job
+from .models.JobList import JobList
+from .models.ProcessingOptions import ProcessingOptions
 
 # API path constants so endpoints can be changed in one place
 API_VERSION = "v1"
@@ -73,18 +72,6 @@ class ByteITClient:
     def _build_url(self, path: str) -> str:
         """Build full URL from path."""
         return f"{self.BASE_URL}/{path.lstrip('/')}"
-
-        # Fallback: try to get from a dedicated endpoint
-        try:
-            response = self._session.get(f"{self.BASE_URL}/csrf/")
-            if response.status_code == 200:
-                data = response.json()
-                self._csrf_token = data.get("csrf_token")
-                return self._csrf_token
-        except Exception:
-            pass
-
-        return ""
 
     def _handle_response(self, response: requests.Response) -> Dict[str, Any]:
         """
@@ -157,22 +144,16 @@ class ByteITClient:
         # If caller didn't provide a timeout, use the default per-method timeout
         kwargs.setdefault("timeout", self.DEFAULT_TIMEOUT)
 
-        try:
-            response = self._session.request(method, url, **kwargs)
-            return self._handle_response(response)
-        except requests.exceptions.RequestException as e:
-            # Single attempt only; wrap network errors
-            raise NetworkError(f"Request failed: {str(e)}")
+        response = self._session.request(method, url, **kwargs)
+        return self._handle_response(response)
 
     def _create_single_job(
         self,
         input_connector: InputConnector,
         output_connector: Optional[OutputConnector] = None,
-        processing_options: Optional[Dict[str, Any]] = None,
+        processing_options: Optional[ProcessingOptions] = None,
         nickname: Optional[str] = None,
         timeout: int = DEFAULT_TIMEOUT,
-        retry_on_db_lock: bool = True,
-        max_retries: int = 3,
     ) -> Job:
         """
         Internal method to create a single job.
@@ -180,11 +161,9 @@ class ByteITClient:
         Args:
             input_connector: Input connector providing file data
             output_connector: Output connector for result storage
-            processing_options: Optional processing configuration dict
+            processing_options: Optional processing configuration (ProcessingOptions object)
             nickname: Optional nickname for the job
             timeout: Request timeout in seconds
-            retry_on_db_lock: Whether to retry on database lock errors (for SQLite)
-            max_retries: Maximum number of retries for database lock errors
 
         Returns:
             Job object with initial job information
@@ -193,21 +172,24 @@ class ByteITClient:
         if output_connector is None:
             output_connector = ByteITStorageOutputConnector()
 
-        # Validate processing options if provided
-        if processing_options:
-            validate_processing_options(processing_options)
+        # Convert ProcessingOptions to dict if provided
+        options_dict: Optional[Dict[str, Any]] = None
+        if processing_options is not None:
+            options_dict = processing_options.to_dict()
 
         # Get connector configuration
         connector_config = input_connector.to_dict()
-        connector_type = connector_config.get("type", "localfile")
+        connector_type = (
+            connector_config.get("type", "localfile").strip().lower()
+        )
 
         # Extract output_format from processing_options or use default
         output_format = "txt"
-        clean_processing_options = {}
+        clean_processing_options: Dict[str, Any] = {}
 
-        if processing_options:
+        if options_dict:
             # Make a copy to avoid modifying the original
-            clean_processing_options = processing_options.copy()
+            clean_processing_options = options_dict.copy()
             # Extract output_format if present
             if "output_format" in clean_processing_options:
                 output_format = clean_processing_options.pop("output_format")
@@ -239,87 +221,48 @@ class ByteITClient:
         files = None
         file_obj = None
 
-        if connector_type != "localfile":
+        # TODO: This needs to be updated once we add more connectors
+        if connector_type == "localfile":
+            # For local file connector, upload the file
+            filename, file_obj = input_connector.get_file_data()
+            files = {"file": (filename, file_obj)}
+        elif connector_type == "s3":
             # For S3 connector, send connection data (no file upload)
             filename, connection_data = input_connector.get_file_data()
             data["input_connection_data"] = json.dumps(connection_data)
         else:
-            # For local file connector, upload the file
-            filename, file_obj = input_connector.get_file_data()
-            files = {"file": (filename, file_obj)}
+            raise ValidationError(
+                f"Unsupported input connector type: {connector_type}"
+            )
 
-        last_error = None
-        try:
-            for attempt in range(max_retries + 1):
-                try:
-                    response = self._request(
-                        "POST",
-                        f"{API_BASE}/{JOBS_PATH}/",
-                        files=files,
-                        data=data,
-                        timeout=timeout,
-                    )
+        response = self._request(
+            "POST",
+            f"{API_BASE}/{JOBS_PATH}/",
+            files=files,
+            data=data,
+            timeout=timeout,
+        )
 
-                    # Extract job from response
-                    job_data = response.get("document", {}) or response.get(
-                        "job", {}
-                    )
-                    return Job.from_dict(job_data)
+        # Close file object after request is done
+        if file_obj is not None and hasattr(file_obj, "close"):
+            if not file_obj.closed:
+                file_obj.close()
 
-                except (ServerError, ValidationError) as e:
-                    # Check if it's a database lock error
-                    error_msg = str(e).lower()
-                    is_db_lock = (
-                        "database is locked" in error_msg
-                        or "database locked" in error_msg
-                    )
+        # Handle API response format: {detail, job_id, processing_status}
+        if "job_id" in response:
+            job_id = response["job_id"]
+            return self.get_job(job_id=job_id, timeout=timeout)
 
-                    if (
-                        retry_on_db_lock
-                        and is_db_lock
-                        and attempt < max_retries
-                    ):
-                        # Exponential backoff: 0.1s, 0.2s, 0.4s, etc.
-                        wait_time = 0.1 * (2**attempt)
-                        time.sleep(wait_time)
-                        last_error = e
+        # Try to extract job data from response
+        job_data = response.get("job")
 
-                        # For local file connectors, close and reopen file
-                        if file_obj is not None:
-                            if (
-                                hasattr(file_obj, "close")
-                                and not file_obj.closed
-                            ):
-                                file_obj.close()
-
-                            # Reopen file for retry
-                            filename, file_obj = input_connector.get_file_data()
-                            files = {"file": (filename, file_obj)}
-
-                        # For S3 connectors, just retry with same data
-                        continue
-                    else:
-                        # Not a DB lock error, or out of retries
-                        raise
-
-            # If we get here, all retries failed
-            if last_error:
-                raise last_error
-
-            raise RuntimeError("Unexpected: no error but no success either")
-
-        finally:
-            # Always close file at the very end, regardless of success or failure
-            # (Only applicable for local file connectors)
-            if file_obj is not None and hasattr(file_obj, "close"):
-                if not file_obj.closed:
-                    file_obj.close()
+        return Job.from_dict(job_data)
 
     def create_job(
         self,
         input_connector: Union[InputConnector, List[InputConnector]],
         output_connector: Optional[OutputConnector] = None,
-        processing_options: Optional[Dict[str, Any]] = None,
+        processing_options: Optional[ProcessingOptions] = None,
         nickname: Optional[str] = None,
         timeout: int = DEFAULT_TIMEOUT,
         max_workers: int = 5,
@@ -330,12 +273,10 @@ class ByteITClient:
         Args:
             input_connector: Single InputConnector or list of InputConnectors
             output_connector: Output connector for result storage (default: ByteITStorageOutputConnector)
-            processing_options: Optional processing configuration dict with keys:
-                - ocr_model: OCR model to use
-                - vlm_model: Vision-Language model to use
-                - languages: List of languages to detect/process
+            processing_options: Optional processing configuration (ProcessingOptions object) with fields:
+                - languages: List of languages to detect/process (e.g., ["en", "de"])
                 - page_range: Page range to process (e.g., "1-5", "all")
-                - output_format: Output format (json, txt, md, html)
+                - output_format: Output format (txt, json, md, html) - sent as top-level param
             nickname: Optional nickname for the job (for easier identification)
             timeout: Request timeout in seconds
             max_workers: Maximum number of concurrent workers for batch processing (default: 5)
@@ -351,21 +292,6 @@ class ByteITClient:
             APIKeyError: If API key is invalid
             NetworkError: If network error occurs
             JobProcessingError: If any job creation fails
-
-        Examples:
-            Single file:
-            >>> from byteit.connectors import LocalFileInputConnector
-            >>> input_conn = LocalFileInputConnector("document.pdf")
-            >>> job = client.create_job(input_conn)
-
-            Multiple files (async):
-            >>> input_conns = [
-            ...     LocalFileInputConnector("doc1.pdf"),
-            ...     LocalFileInputConnector("doc2.pdf"),
-            ...     LocalFileInputConnector("doc3.pdf")
-            ... ]
-            >>> jobs = client.create_job(input_conns)
-            >>> print(f"Created {len(jobs)} jobs")
         """
         # Handle single connector
         if isinstance(input_connector, InputConnector):
@@ -377,15 +303,10 @@ class ByteITClient:
                 timeout,
             )
 
-        # Handle list of connectors - process asynchronously
-        if not isinstance(input_connector, list):
-            raise TypeError(
-                "input_connector must be an InputConnector or a list of InputConnectors"
-            )
-
         if not input_connector:
             raise ValueError("input_connector list cannot be empty")
 
+        # At this point we know a list of input connectors was given
         # Process multiple files concurrently using ThreadPoolExecutor
         jobs: List[Job] = []
         errors: List[tuple[int, Exception]] = []
@@ -411,7 +332,9 @@ class ByteITClient:
                 try:
                     job = future.result()
                     job_results[idx] = job
-                except Exception as e:
+                except (
+                    Exception
+                ) as e:  # .result raises Exception and therefore this is needed.
                     errors.append((idx, e))
 
         # Sort jobs by original index to maintain order
@@ -439,10 +362,6 @@ class ByteITClient:
         Raises:
             ResourceNotFoundError: If job doesn't exist
             APIKeyError: If API key is invalid
-
-        Example:
-            >>> job = client.get_job("job-123")
-            >>> print(job.processing_status)
         """
         response = self._request(
             "GET", f"{API_BASE}/{JOBS_PATH}/{job_id}/", timeout=timeout
@@ -451,9 +370,7 @@ class ByteITClient:
         job_data = response.get("job", response.get("document", response))
         return Job.from_dict(job_data)
 
-    def list_jobs(
-        self, timeout: int = DEFAULT_TIMEOUT
-    ) -> JobList:  # Update to not request user_id
+    def list_jobs(self, timeout: int = DEFAULT_TIMEOUT) -> JobList:
         """
         List all jobs for the authenticated user.
 
@@ -462,11 +379,6 @@ class ByteITClient:
 
         Returns:
             JobList object with list of jobs
-
-        Example:
-            >>> job_list = client.list_jobs()
-            >>> for job in job_list.jobs:
-            ...     print(f"{job.id}: {job.processing_status}")
         """
         params = {}
 
@@ -501,60 +413,22 @@ class ByteITClient:
         Raises:
             ResourceNotFoundError: If job doesn't exist
             JobProcessingError: If job is not completed
-
-        Example:
-            >>> result = client.get_job_result("job-123", "output.md")
-            >>> # Or get bytes directly
-            >>> content = client.get_job_result("job-123")
         """
         url = self._build_url(f"{API_BASE}/{JOBS_PATH}/{job_id}/result/")
 
-        try:
-            response = self._session.get(url, timeout=timeout)
+        response = self._session.get(url, timeout=timeout)
 
-            # First check the status code
-            response.raise_for_status()
+        # First check the status code
+        response.raise_for_status()
 
-            # Check if this is a file download by looking for Content-Disposition header
-            content_disposition = response.headers.get(
-                "Content-Disposition", ""
-            )
-            content_type = response.headers.get("Content-Type", "")
+        # Check if this is a file download by looking for Content-Disposition header
+        content_disposition = response.headers.get("Content-Disposition", "")
+        content_type = response.headers.get("Content-Type", "")
 
-            # If Content-Disposition is present with "attachment", it's a file download
-            # This is true even if Content-Type is application/json (for JSON result files)
-            if "attachment" in content_disposition:
-                # This is a file download (the actual result)
-                content = response.content
-
-                # Save to file if path provided
-                if output_path:
-                    output_path = Path(output_path)
-                    output_path.write_bytes(content)
-                    return str(output_path)
-
-                return content
-
-            # If no Content-Disposition with attachment, check if it's a JSON status response
-            if "application/json" in content_type:
-                # This means the job is not ready or there's an error
-                data = self._handle_response(response)
-                # Job not ready yet
-                if not data.get("ready", False):
-                    raise JobProcessingError(
-                        f"Job is not ready yet. Status: {data.get('processing_status')}",
-                        response.status_code,
-                        data,
-                    )
-                # If we get here with JSON, something unexpected happened
-                raise JobProcessingError(
-                    f"Unexpected JSON response: {data}",
-                    response.status_code,
-                    data,
-                )
-
-            # If we get here, it's a file response (not JSON)
-            # Get the file content
+        # If Content-Disposition is present with "attachment", it's a file download
+        # This is true even if Content-Type is application/json (for JSON result files)
+        if "attachment" in content_disposition:
+            # This is a file download (the actual result)
             content = response.content
 
             # Save to file if path provided
@@ -565,8 +439,38 @@ class ByteITClient:
 
             return content
 
-        except requests.exceptions.RequestException as e:
-            raise NetworkError(f"Failed to download result: {str(e)}")
+        # If no Content-Disposition with attachment, check if it's a JSON status response
+        if "application/json" in content_type:
+            # This means the job is not ready or there's an error
+            data = self._handle_response(response)
+            # Job not ready yet
+            if not data.get("ready", False):
+                status = data.get("processing_status", "unknown")
+                raise JobProcessingError(
+                    f"Result not available. Job status: {status}. "
+                    f"Use wait_for_job() to wait for completion before downloading.",
+                    response.status_code,
+                    data,
+                )
+            # If we get here with JSON and ready=True but no file, something is wrong
+            raise JobProcessingError(
+                "Job is ready but no result file was returned. "
+                "This may indicate a server-side issue.",
+                response.status_code,
+                data,
+            )
+
+        # If we get here, it's a file response (not JSON)
+        # Get the file content
+        content = response.content
+
+        # Save to file if path provided
+        if output_path:
+            output_path = Path(output_path)
+            output_path.write_bytes(content)
+            return str(output_path)
+
+        return content
 
     def wait_for_job(
         self,
@@ -580,7 +484,7 @@ class ByteITClient:
 
         Args:
             job_id: The ID of the job to wait for
-            poll_interval: Seconds between status checks (default: 5)
+            poll_interval: Sectheonds between status checks (default: 5)
             max_wait_time: Maximum seconds to wait (default: 600)
 
         Returns:
@@ -599,7 +503,7 @@ class ByteITClient:
 
             if job.is_failed:
                 raise JobProcessingError(
-                    f"Job failed: {job.processing_error or 'Unknown error'}"
+                    f"Job failtheed: {job.processing_error or 'Unknown error'}"
                 )
 
             elapsed = time.time() - start_time
@@ -614,7 +518,7 @@ class ByteITClient:
         self,
         input_connector: Union[InputConnector, List[InputConnector]],
         output_connector: Optional[OutputConnector] = None,
-        processing_options: Optional[Dict[str, Any]] = None,
+        processing_options: Optional[ProcessingOptions] = None,
         nickname: Optional[str] = None,
         output_path: Optional[Union[str, Path, List[Union[str, Path]]]] = None,
         poll_interval: int = 5,
@@ -628,7 +532,7 @@ class ByteITClient:
         Args:
             input_connector: Single InputConnector or list of InputConnectors
             output_connector: Output connector for result storage (default: ByteITStorageOutputConnector)
-            processing_options: Optional processing configuration dict
+            processing_options: Optional processing configuration (ProcessingOptions object)
             nickname: Optional nickname for the job (for easier identification)
             output_path: Optional path(s) to save result(s). Can be:
                 - Single path (str/Path) when processing one file
@@ -642,27 +546,11 @@ class ByteITClient:
         Returns:
             Single result (bytes or str) if single connector provided,
             or List[bytes | str] if list of connectors provided
-
-        Examples:
-            Single file:
-            >>> from byteit.connectors import LocalFileInputConnector
-            >>> input_conn = LocalFileInputConnector("doc.pdf")
-            >>> result = client.process_document(input_conn, output_path="output.md")
-            >>> print(f"Saved to: {result}")
-
-            Multiple files:
-            >>> input_conns = [
-            ...     LocalFileInputConnector("doc1.pdf"),
-            ...     LocalFileInputConnector("doc2.pdf")
-            ... ]
-            >>> output_paths = ["output1.txt", "output2.txt"]
-            >>> results = client.process_document(input_conns, output_path=output_paths)
-            >>> print(f"Processed {len(results)} documents")
         """
         # Handle single connector
         if isinstance(input_connector, InputConnector):
             # Create job
-            job = self.create_job(
+            job_result = self.create_job(
                 input_connector,
                 output_connector,
                 processing_options,
@@ -670,31 +558,35 @@ class ByteITClient:
                 timeout,
             )
 
+            # Type narrowing: we know it's a single Job
+            if not isinstance(job_result, Job):
+                raise RuntimeError("Expected single Job from create_job")
+
             # Wait for completion
-            self.wait_for_job(job.id, poll_interval, max_wait_time, timeout)
+            self.wait_for_job(
+                job_result.id, poll_interval, max_wait_time, timeout
+            )
 
             # Get result
             single_output_path = (
                 output_path if not isinstance(output_path, list) else None
             )
-            return self.get_job_result(job.id, single_output_path, timeout)
-
-        # Handle list of connectors
-        if not isinstance(input_connector, list):
-            raise TypeError(
-                "input_connector must be an InputConnector or a list of InputConnectors"
+            return self.get_job_result(
+                job_result.id, single_output_path, timeout
             )
 
+        # Handle list of connectors
         if not input_connector:
             raise ValueError("input_connector list cannot be empty")
 
         # Validate output_path if provided
-        if output_path is not None and isinstance(output_path, list):
-            if len(output_path) != len(input_connector):
-                raise ValueError(
-                    f"output_path list length ({len(output_path)}) must match "
-                    f"input_connector list length ({len(input_connector)})"
-                )
+        if isinstance(output_path, list) and len(output_path) != len(
+            input_connector
+        ):
+            raise ValueError(
+                f"output_path list length ({len(output_path)}) must match "
+                f"input_connector list length ({len(input_connector)})"
+            )
 
         # Create all jobs asynchronously
         jobs = self.create_job(
@@ -709,52 +601,31 @@ class ByteITClient:
         if not isinstance(jobs, list):
             raise RuntimeError("Expected list of jobs from create_job")
 
-        # Wait for all jobs to complete and get results concurrently
+        # Wait for all jobs to complete and get results
         results: List[Union[bytes, str]] = []
         errors: List[tuple[int, Exception]] = []
 
-        def process_single_job(
-            idx: int, job: Job
-        ) -> tuple[int, Union[bytes, str]]:
-            """Process a single job: wait and get result."""
-            # Wait for completion
-            self.wait_for_job(job.id, poll_interval, max_wait_time, timeout)
-
+        for idx, job in enumerate(jobs):
             # Determine output path for this job
             job_output_path = None
             if output_path is not None:
                 if isinstance(output_path, list):
                     job_output_path = output_path[idx]
                 else:
-                    # Single path provided for multiple files - create numbered paths
                     path = Path(output_path)
                     job_output_path = (
                         path.parent / f"{path.stem}_{idx}{path.suffix}"
                     )
 
-            # Get result
-            result = self.get_job_result(job.id, job_output_path, timeout)
-            return (idx, result)
+            try:
+                # Wait for completion
+                self.wait_for_job(job.id, poll_interval, max_wait_time, timeout)
 
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Submit all job processing tasks
-            future_to_index = {
-                executor.submit(process_single_job, idx, job): idx
-                for idx, job in enumerate(jobs)
-            }
-
-            # Collect results
-            result_map: Dict[int, Union[bytes, str]] = {}
-            for future in as_completed(future_to_index):
-                idx = future_to_index[future]
-                try:
-                    result_idx, result = future.result()
-                    result_map[result_idx] = result
-                except Exception as e:
-                    errors.append((idx, e))
-
-        # Sort results by original index
-        results = [result_map[idx] for idx in sorted(result_map.keys())]
+                # Get result
+                result = self.get_job_result(job.id, job_output_path, timeout)
+                results.append(result)
+            except (JobProcessingError, NetworkError) as e:
+                errors.append((idx, e))
 
         # Raise exception if any processing failed
         if errors:

@@ -20,7 +20,7 @@ from time import time
 # Parent directory to path to import byteit
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from byteit import ByteITClient
+from byteit import ByteITClient, ProcessingOptions, OutputFormat
 from byteit.connectors import S3InputConnector, S3OutputConnector
 from byteit.exceptions import ByteITError
 
@@ -54,10 +54,13 @@ def example_s3_to_local():
         print(f"Bucket: {input_connector.source_bucket}")
         print(f"Path: {input_connector.source_path_inside_bucket}")
 
+        # Create processing options
+        options = ProcessingOptions(output_format=OutputFormat.TXT)
+
         # Process and save locally
         result_path = client.process_document(
             input_connector=input_connector,
-            processing_options={"output_format": "txt"},
+            processing_options=options,
             output_path="invoice_result.txt",
             poll_interval=5,
             max_wait_time=600,
@@ -119,12 +122,17 @@ def example_s3_to_s3():
             f"Destination: s3://{output_connector.bucket}/{output_connector.path}"
         )
 
+        # Create processing options
+        options = ProcessingOptions(
+            output_format=OutputFormat.MD, languages=["en"]
+        )
+
         # Create job
         job = client.create_job(
             nickname="Library S3 to S3 Example",
             input_connector=input_connector,
             output_connector=output_connector,
-            processing_options={"output_format": "md", "languages": ["en"]},
+            processing_options=options,
         )
 
         print(f"\n✓ Job created: {job.id}")
@@ -190,15 +198,17 @@ def example_batch_s3_processing():
         print(f"Source bucket: company-processed-byteit")
         print(f"Destination: s3://company-processed-byteit/processed/")
 
+        # Create processing options
+        options = ProcessingOptions(
+            output_format=OutputFormat.JSON,
+            languages=["en"],
+        )
+
         # Create all jobs
         jobs = client.create_job(
             input_connector=input_connectors,
             output_connector=output_connector,
-            processing_options={
-                "output_format": "json",
-                "languages": ["en"],
-                "ocr_model": "tesseractocr",
-            },
+            processing_options=options,
             max_workers=5,  # Process up to 5 concurrently
         )
 
@@ -261,10 +271,13 @@ def example_local_to_s3():
         print(f"\nProcessing local file: {local_file}")
         print(f"Will save to: s3://company-processed-byteit/fromlocal/")
 
+        # Create processing options
+        options = ProcessingOptions(output_format=OutputFormat.TXT)
+
         job = client.create_job(
             input_connector=input_connector,
             output_connector=output_connector,
-            processing_options={"output_format": "txt"},
+            processing_options=options,
         )
 
         print(f"\n✓ Job created: {job.id}")

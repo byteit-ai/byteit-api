@@ -5,13 +5,10 @@ from typing import Any, Dict, List, Set
 from .exceptions import ValidationError
 
 
-# Expected processing option fields
+# Valid processing option fields (only languages and page_range are allowed)
 VALID_PROCESSING_OPTIONS: Set[str] = {
-    "ocr_model",
-    "vlm_model",
     "languages",
     "page_range",
-    "output_format",
 }
 
 
@@ -19,19 +16,19 @@ def validate_processing_options(options: Dict[str, Any]) -> None:
     """
     Validate processing options dictionary.
 
+    Only 'languages' and 'page_range' are allowed in processing_options.
+    The 'output_format' should be passed as a top-level parameter, not
+    inside processing_options.
+
     Args:
         options: Processing options dictionary to validate
 
     Raises:
-        ValidationError: If any unexpected fields are found
+        ValidationError: If any unexpected or deprecated fields are found
 
     """
-    if not isinstance(options, dict):
-        raise ValidationError(
-            f"processing_options must be a dictionary, got {type(options).__name__}"
-        )
-
     unexpected_fields: List[str] = []
+
     for field in options.keys():
         if field not in VALID_PROCESSING_OPTIONS:
             unexpected_fields.append(field)

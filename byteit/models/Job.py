@@ -1,20 +1,10 @@
-"""Data models for ByteIT API responses."""
+"""Data model for ByteIT Job."""
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, Optional
-
-
-@dataclass
-class DocumentMetadata:
-    """Metadata information about a document."""
-
-    original_filename: str
-    document_type: str
-    file_size_bytes: Optional[int] = None
-    page_count: Optional[int] = None
-    language: str = "en"
-    encoding: str = "utf-8"
+from typing import Any, Dict, Optional, cast
+from byteit.models.DocumentMetadata import DocumentMetadata
+from byteit.models.ProcessingOptions import ProcessingOptions
 
 
 @dataclass
@@ -31,7 +21,7 @@ class Job:
     file_hash: Optional[str] = None
     nickname: Optional[str] = None
     metadata: Optional[DocumentMetadata] = None
-    processing_options: Optional[Dict[str, Any]] = None
+    processing_options: Optional[ProcessingOptions] = None
     processing_error: Optional[str] = None
     storage_path: Optional[str] = None
     result_path: Optional[str] = None
@@ -92,14 +82,13 @@ class Job:
         # Parse metadata
         metadata = None
         if data.get("metadata") and isinstance(data["metadata"], dict):
-            metadata_dict = data["metadata"]
+            metadata_dict = cast(Dict[str, Any], data["metadata"])
             try:
                 metadata = DocumentMetadata(
                     original_filename=metadata_dict.get(
                         "original_filename", ""
                     ),
                     document_type=metadata_dict.get("document_type", ""),
-                    file_size_bytes=metadata_dict.get("file_size_bytes"),
                     page_count=metadata_dict.get("page_count"),
                     language=metadata_dict.get("language", "en"),
                     encoding=metadata_dict.get("encoding", "utf-8"),
@@ -109,8 +98,15 @@ class Job:
                 print(f"Warning: Failed to parse metadata: {e}")
                 metadata = None
 
-        # Parse processing options (keep as dict)
-        processing_options = data.get("processing_options")
+        # Parse processing options
+        processing_options = None
+        processing_options_data = data.get("processing_options")
+        if processing_options_data and isinstance(
+            processing_options_data, dict
+        ):
+            processing_options = ProcessingOptions.from_dict(
+                processing_options_data
+            )
 
         return cls(
             id=data["id"],
@@ -134,12 +130,3 @@ class Job:
             started_processing_at=started_processing_at,
             finished_processing_at=finished_processing_at,
         )
-
-
-@dataclass
-class JobList:
-    """List of jobs with metadata."""
-
-    jobs: list[Job]
-    count: int
-    detail: str
