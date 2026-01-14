@@ -1,0 +1,13 @@
+name: rebase-feature-from-sprint (caller)
+
+on:
+  create:
+    branches:
+      - "sprint*-*"
+
+permissions:
+  contents: write
+  
+jobs:
+  call-rebase-feature-from-sprint:
+    uses: byteit-ai/github-workflows/.github/workflows/rebase-feature-from-sprint.core.yml@main
