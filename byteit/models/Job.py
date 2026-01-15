@@ -9,7 +9,38 @@ from byteit.models.ProcessingOptions import ProcessingOptions
 
 @dataclass
 class Job:
-    """Represents a document processing job."""
+    """Document processing job.
+
+    Represents a document parsing job in the ByteIT system, tracking its
+    status, configuration, and results.
+
+    Attributes:
+        id: Unique job identifier
+        created_at: Job creation timestamp
+        updated_at: Last update timestamp
+        processing_status: Current status (pending, processing, completed, failed)
+        result_format: Output format (txt, json, md, html)
+        owner_user_id: ID of the user who created the job
+        file_data: Original file information
+        file_hash: Hash of the input file
+        nickname: Optional user-defined job name
+        metadata: Document metadata (filename, type, pages, etc.)
+        processing_options: Job configuration options
+        processing_error: Error message if job failed
+        storage_path: Internal storage location
+        result_path: Path to processed result
+        input_connector: Type of input connector used
+        input_connection_data: Input connector configuration
+        output_connector: Type of output connector used
+        output_connection_data: Output connector configuration
+        started_processing_at: Processing start time
+        finished_processing_at: Processing completion time
+
+    Properties:
+        is_completed: True if job finished successfully
+        is_failed: True if job failed
+        is_processing: True if job is currently being processed
+    """
 
     id: str
     created_at: datetime
@@ -53,17 +84,13 @@ class Job:
         # Parse datetime fields
         created_at = data.get("created_at")
         if isinstance(created_at, str):
-            created_at = datetime.fromisoformat(
-                created_at.replace("Z", "+00:00")
-            )
+            created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
         else:
             created_at = datetime.now()  # fallback
 
         updated_at = data.get("updated_at")
         if isinstance(updated_at, str):
-            updated_at = datetime.fromisoformat(
-                updated_at.replace("Z", "+00:00")
-            )
+            updated_at = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
         else:
             updated_at = datetime.now()  # fallback
 
@@ -85,9 +112,7 @@ class Job:
             metadata_dict = cast(Dict[str, Any], data["metadata"])
             try:
                 metadata = DocumentMetadata(
-                    original_filename=metadata_dict.get(
-                        "original_filename", ""
-                    ),
+                    original_filename=metadata_dict.get("original_filename", ""),
                     document_type=metadata_dict.get("document_type", ""),
                     page_count=metadata_dict.get("page_count"),
                     language=metadata_dict.get("language", "en"),
@@ -101,12 +126,8 @@ class Job:
         # Parse processing options
         processing_options = None
         processing_options_data = data.get("processing_options")
-        if processing_options_data and isinstance(
-            processing_options_data, dict
-        ):
-            processing_options = ProcessingOptions.from_dict(
-                processing_options_data
-            )
+        if processing_options_data and isinstance(processing_options_data, dict):
+            processing_options = ProcessingOptions.from_dict(processing_options_data)
 
         return cls(
             id=data["id"],

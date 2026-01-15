@@ -7,20 +7,31 @@ from .base import InputConnector
 
 
 class S3InputConnector(InputConnector):
-    """
-    Input connector for Amazon S3 using IAM role authentication.
+    """AWS S3 input connector with IAM role authentication.
 
-    This connector instructs the ByteIT server to fetch files directly from
-    your S3 bucket using IAM role assumption. The file does NOT pass through
-    your local machine.
+    Instructs ByteIT servers to fetch files directly from your S3 bucket
+    using IAM role assumption. Files never pass through your local machine,
+    providing faster processing and reduced bandwidth usage.
 
     Prerequisites:
-        You must first create an AWS connection in ByteIT by providing an IAM
-        role ARN that ByteIT can assume to access your S3 bucket.
+        - Create an AWS connection in ByteIT dashboard
+        - Provide an IAM role ARN that ByteIT can assume
+        - Grant the role read access to your S3 bucket
+
+    Args:
+        source_bucket: S3 bucket name
+        source_path_inside_bucket: Object key/path within bucket
 
     Note:
-        The ByteIT server will use the IAM role configured in your AWS connection
-        to access the S3 bucket. No AWS credentials are needed in your client code.
+        No AWS credentials needed in client code - ByteIT uses the
+        IAM role configured in your account settings.
+
+    Example:
+        connector = S3InputConnector(
+            source_bucket="my-documents",
+            source_path_inside_bucket="invoices/2024/jan.pdf"
+        )
+        result = client.parse(connector)
     """
 
     def __init__(

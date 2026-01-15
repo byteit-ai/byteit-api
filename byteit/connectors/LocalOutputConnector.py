@@ -5,7 +5,7 @@ from typing import Any, Dict
 from .base import OutputConnector
 
 
-class ByteITStorageOutputConnector(OutputConnector):
+class LocalOutputConnector(OutputConnector):
     """
     Output connector that stores results in ByteIT cloud storage.
 

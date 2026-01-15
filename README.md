@@ -1,350 +1,398 @@
-# ByteIT Python Library User Guide
+# ByteIT API Library
 
-This guide provides a complete overview of the ByteIT Python library for document text extraction. It covers installation, setup, connectors, API methods, and examples.
+**Turn your data into AI - Transform documents into structured data with a single line of code.**
 
-## What is ByteIT?
+ByteIT is an AI-powered document intelligence platform that extracts clean, structured data from PDFs, Word, Excel, and many other file formats. This Python SDK provides a simple, developer-first interface to ByteIT's advanced document processing capabilities.
 
-ByteIT is a Python client library for the ByteIT text extraction service. It allows you to process documents (PDFs, images, etc.) by uploading them locally or from cloud storage like S3, and retrieve extracted text in various formats.
+---
 
-## Installation
+## Why ByteIT?
 
-Install the library using pip:
+- **Lightning Fast** - Process documents in under 2 seconds
+- **AI-Powered** - Advanced ML models trained on millions of documents
+- **Simple API** - Parse documents in one line: `client.parse("document.pdf")`
+- **Developer First** - Clean code, full type hints, comprehensive SDKs
+- **Enterprise Security** - End-to-end encryption and GDPR compliance
+- **Smart Extraction** - Extract text, tables, forms, and structured data with AI precision
+
+---
+
+## Quick Start
+
+### Installation
 
 ```bash
 pip install byteit
 ```
 
-Or from source:
-
-```bash
-git clone https://github.com/byteit-ai/byteit-library.git
-cd byteit-library
-pip install -e .
-```
-
-Dependencies include [`requests`](venv/lib/python3.12/site-packages/requests/__init__.py ) and [`typing-extensions`](/usr/lib/python3.12/typing.py ).
-
-## Getting Started
-
-### API Key Setup
-
-You need a ByteIT API key to access the service.
-If you have not generated your API key yet, please do so through the ByteIT website or email support for assistance.
-
-### Initializing the Client
-
-Import and initialize the client:
+### Basic Usage
 
 ```python
 from byteit import ByteITClient
 
-client = ByteITClient(api_key="your-api-key-here")
+# Initialize client
+client = ByteITClient(api_key="your_api_key")
+
+# Parse a document
+result = client.parse("invoice.pdf")
+print(result.decode())
 ```
 
-Use the client as a context manager for automatic cleanup:
+That's it. Your document is now structured text.
+
+---
+
+## Features
+
+### Parse Any Document
 
 ```python
-with ByteITClient(api_key="your-api-key-here") as client:
-    # Your code here
-    pass
+# Local files
+result = client.parse("contract.pdf")
+
+# Different formats
+txt_result = client.parse("doc.pdf", output_format="txt")
+json_result = client.parse("doc.pdf", output_format="json")
+md_result = client.parse("doc.pdf", output_format="md")
+html_result = client.parse("doc.pdf", output_format="html")
+
+# Save to file
+client.parse("doc.pdf", output="result.txt")
 ```
 
-## Connectors
+### S3 Integration
 
-Connectors handle input (source of documents) and output (destination for results).
-
-### Input Connectors
-
-#### LocalFileInputConnector
-
-Uploads a local file for processing.
-
-- **Parameters**:
-  - [`file_path`](byteit/connectors/LocalFileInputConnector.py ) (str): Path to the local file (required).
-
-- **Example**:
-  ```python
-  from byteit.connectors import LocalFileInputConnector
-
-  input_connector = LocalFileInputConnector(file_path="sample_document.pdf")
-  ```
-
-#### S3InputConnector
-
-Fetches files directly from Amazon S3 using IAM role authentication. The file does not pass through your local machine.
-
-- **Prerequisites**: Configure an AWS IAM role in your ByteIT dashboard.
-- **Parameters**:
-  - [`source_bucket`](byteit/connectors/S3InputConnector.py ) (str): S3 bucket name (required).
-  - [`source_path_inside_bucket`](byteit/connectors/S3InputConnector.py ) (str): Path to the file within the bucket (required).
-
-- **Example**:
-  ```python
-  from byteit.connectors import S3InputConnector
-
-  input_connector = S3InputConnector(
-      source_bucket="your-bucket",
-      source_path_inside_bucket="path/to/file.pdf"
-  )
-  ```
-
-### Output Connectors
-
-#### ByteITStorageOutputConnector (Default)
-
-Stores results in ByteIT cloud storage. Retrieve later using job ID.
-
-- **Parameters**: None (default connector).
-
-- **Example**:
-  ```python
-  from byteit.connectors import ByteITStorageOutputConnector
-
-  output_connector = ByteITStorageOutputConnector()
-  ```
-
-#### S3OutputConnector
-
-Saves results directly to S3 using IAM role authentication. Results do not pass through your local machine.
-
-- **Prerequisites**: Configure an AWS IAM role in your ByteIT dashboard.
-- **Parameters**:
-  - [`bucket`](byteit/connectors/S3OutputConnector.py ) (str): S3 bucket name (required).
-  - [`path`](byteit/api_client.py ) (str): Path prefix within the bucket (optional, defaults to "").
-
-- **Example**:
-  ```python
-  from byteit.connectors import S3OutputConnector
-
-  output_connector = S3OutputConnector(bucket="your-bucket", path="results/")
-  ```
-
-## API Methods
-
-All methods are part of [`ByteITClient`](byteit/api_client.py ).
-
-### create_job
-
-Creates one or more processing jobs.
-
-- **Parameters**:
-  - [`input_connector`](byteit/api_client.py ) (InputConnector or List[InputConnector]): Source connector(s) (required).
-  - [`output_connector`](byteit/api_client.py ) (OutputConnector): Destination connector (optional, defaults to ByteITStorageOutputConnector).
-  - [`processing_options`](byteit/api_client.py ) (ProcessingOptions): Processing settings (optional). Valid fields:
-    - `languages` (List[str]): Languages to detect/process, e.g., ["en", "de"].
-    - `page_range` (str): Page range to process, e.g., "1-5".
-    - `output_format` (OutputFormat or str): Output format (txt, json, md, html). Sent as top-level parameter.
-  - [`nickname`](byteit/api_client.py ) (str): Job nickname for identification (optional).
-  - [`timeout`](byteit/api_client.py ) (int): Request timeout in seconds (optional, defaults to 30).
-  - [`max_workers`](byteit/api_client.py ) (int): Concurrent workers for batch processing (optional, defaults to 5).
-
-- **Returns**: Job or List[Job].
-- **Raises**: ValidationError, APIKeyError, NetworkError, JobProcessingError.
-
-- **Example**:
-  ```python
-  from byteit import ProcessingOptions, OutputFormat
-
-  options = ProcessingOptions(
-      languages=["en"],
-      output_format=OutputFormat.TXT
-  )
-  job = client.create_job(
-      input_connector=input_connector,
-      processing_options=options
-  )
-  ```
-
-### get_job
-
-Retrieves job information.
-
-- **Parameters**:
-  - [`job_id`](byteit/api_client.py ) (str): Job ID (required).
-  - [`timeout`](byteit/api_client.py ) (int): Request timeout (optional, defaults to 30).
-
-- **Returns**: Job.
-- **Raises**: ResourceNotFoundError, APIKeyError.
-
-- **Example**:
-  ```python
-  job = client.get_job(job_id="job-123")
-  ```
-
-### list_jobs
-
-Lists all jobs for the user.
-
-- **Parameters**:
-  - [`timeout`](byteit/api_client.py ) (int): Request timeout (optional, defaults to 30).
-
-- **Returns**: JobList.
-- **Raises**: APIKeyError.
-
-- **Example**:
-  ```python
-  job_list = client.list_jobs()
-  for job in job_list.jobs:
-      print(job.id, job.processing_status)
-  ```
-
-### get_job_result
-
-Downloads processed result.
-
-- **Parameters**:
-  - [`job_id`](byteit/api_client.py ) (str): Job ID (required).
-  - [`output_path`](byteit/api_client.py ) (str or Path): Path to save result (optional).
-  - [`timeout`](byteit/api_client.py ) (int): Request timeout (optional, defaults to 30).
-
-- **Returns**: bytes or str (path if saved).
-- **Raises**: ResourceNotFoundError, JobProcessingError.
-
-- **Example**:
-  ```python
-  result = client.get_job_result(job_id="job-123", output_path="output.txt")
-  ```
-
-### wait_for_job
-
-Polls until job completes.
-
-- **Parameters**:
-  - [`job_id`](byteit/api_client.py ) (str): Job ID (required).
-  - [`poll_interval`](byteit/api_client.py ) (int): Seconds between checks (optional, defaults to 5).
-  - [`max_wait_time`](byteit/api_client.py ) (int): Max wait time in seconds (optional, defaults to 600).
-  - [`timeout`](byteit/api_client.py ) (int): Request timeout (optional, defaults to 30).
-
-- **Returns**: Job.
-- **Raises**: JobProcessingError.
-
-- **Example**:
-  ```python
-  completed_job = client.wait_for_job(job_id="job-123")
-  ```
-
-### process_document
-
-Convenience method: Creates job, waits, and retrieves result.
-
-- **Parameters**:
-  - [`input_connector`](byteit/api_client.py ) (InputConnector or List[InputConnector]): Source connector(s) (required).
-  - [`output_connector`](byteit/api_client.py ) (OutputConnector): Destination connector (optional).
-  - [`processing_options`](byteit/api_client.py ) (ProcessingOptions): Processing settings (optional).
-  - [`nickname`](byteit/api_client.py ) (str): Job nickname (optional).
-  - [`output_path`](byteit/api_client.py ) (str, Path, or List): Path(s) to save result(s) (optional).
-  - [`poll_interval`](byteit/api_client.py ) (int): Poll interval (optional, defaults to 5).
-  - [`max_wait_time`](byteit/api_client.py ) (int): Max wait time (optional, defaults to 600).
-  - [`timeout`](byteit/api_client.py ) (int): Request timeout (optional, defaults to 30).
-  - [`max_workers`](byteit/api_client.py ) (int): Concurrent workers (optional, defaults to 5).
-
-- **Returns**: bytes, str, or List[bytes | str].
-- **Raises**: ValidationError, APIKeyError, NetworkError, JobProcessingError.
-
-- **Example**:
-  ```python
-  from byteit import ProcessingOptions, OutputFormat
-
-  options = ProcessingOptions(output_format=OutputFormat.MD)
-  result = client.process_document(
-      input_connector=input_connector,
-      processing_options=options,
-      output_path="output.md"
-  )
-  ```
-
-## Processing Options
-
-Use the `ProcessingOptions` class to configure document processing:
+Process files directly from S3 without downloading - perfect for high-volume workflows:
 
 ```python
-from byteit import ProcessingOptions, OutputFormat
+from byteit.connectors import S3InputConnector
 
-options = ProcessingOptions(
-    languages=["en", "de"],  # Languages to detect/process
-    page_range="1-5",        # Page range to process (optional)
-    output_format=OutputFormat.MD  # Output format (txt, md, json, html)
+# Parse from S3
+result = client.parse(
+    S3InputConnector(
+        source_bucket="my-documents",
+        source_path_inside_bucket="invoices/jan-2024.pdf"
+    )
 )
 ```
 
-**Valid fields:**
+### Job Management
 
-- `languages` (List[str]): Languages to detect/process, e.g., ["en", "de"]. Default: ["en"].
-- `page_range` (str): Page range to process, e.g., "1-5" or "all". Default: "" (all pages).
-- `output_format` (OutputFormat or str): Output format. Valid values: "txt", "md", "json", "html". Default: "txt".
+Track and retrieve processing jobs:
 
-**Note:** The `output_format` is automatically extracted and sent as a top-level parameter to the API.
+```python
+# List all jobs
+jobs = client.get_all_jobs()
+for job in jobs:
+    print(f"{job.id}: {job.processing_status}")
+
+# Get specific job
+job = client.get_job_by_id("job_123")
+
+# Download result later
+if job.is_completed:
+    result = client.get_result(job.id)
+```
+
+### Context Manager
+
+Automatic resource cleanup:
+
+```python
+with ByteITClient(api_key="your_key") as client:
+    result = client.parse("document.pdf")
+    # Session automatically closed
+```
+
+---
+
+## API Reference
+
+### ByteITClient
+
+**`ByteITClient(api_key: str)`**
+
+Initialize the ByteIT client.
+
+**Parameters:**
+- `api_key` (str): Your ByteIT API key
+
+**Methods:**
+
+#### `parse(input, output_format="txt", output=None)`
+
+Parse a document and return the result.
+
+**Parameters:**
+- `input` (str | Path | InputConnector): File to parse
+  - `str` or `Path`: Local file path
+  - `S3InputConnector`: For S3 files
+- `output_format` (str): Output format - "txt", "json", "md", or "html" (default: "txt")
+- `output` (str | Path | None): Optional file path to save result
+
+**Returns:** `bytes` - Parsed content
+
+**Example:**
+```python
+result = client.parse("doc.pdf", output_format="json")
+```
+
+#### `get_all_jobs()`
+
+Get all jobs for your account.
+
+**Returns:** `List[Job]` - List of Job objects
+
+#### `get_job_by_id(job_id: str)`
+
+Get a specific job by ID.
+
+**Parameters:**
+- `job_id` (str): The job ID
+
+**Returns:** `Job` - Job object
+
+#### `get_result(job_id: str)`
+
+Download result for a completed job.
+
+**Parameters:**
+- `job_id` (str): The job ID
+
+**Returns:** `bytes` - Result content
+
+---
+
+## Connectors
+
+### LocalInputConnector
+
+Read files from local filesystem.
+
+```python
+from byteit.connectors import LocalInputConnector
+
+connector = LocalInputConnector("path/to/file.pdf")
+result = client.parse(connector)
+```
+
+### S3InputConnector
+
+Read files from Amazon S3 using IAM role authentication - files never pass through your machine.
+
+**Prerequisites:**
+1. Contact [ByteIT support](https://byteit.ai/contact) to set up AWS connection
+2. Provide IAM role ARN for ByteIT to assume
+3. Grant role read access to your bucket
+
+```python
+from byteit.connectors import S3InputConnector
+
+connector = S3InputConnector(
+    source_bucket="my-bucket",
+    source_path_inside_bucket="documents/file.pdf"
+)
+result = client.parse(connector)
+```
+
+---
 
 ## Error Handling
 
-Import exceptions from [`byteit.exceptions`](byteit/__init__.py ):
+ByteIT SDK provides specific exceptions for different error scenarios:
 
-- [`ByteITError`](byteit/exceptions.py ): Base error.
-- [`AuthenticationError`](byteit/exceptions.py ): Auth issues.
-- [`ValidationError`](byteit/exceptions.py ): Invalid input.
-- [`JobProcessingError`](byteit/exceptions.py ): Job failures.
-- [`NetworkError`](byteit/exceptions.py ): Network issues.
-- [`RateLimitError`](byteit/exceptions.py ): Rate limited.
-- [`ServerError`](byteit/exceptions.py ): Server errors.
-- [`ResourceNotFoundError`](byteit/exceptions.py ): Not found.
+```python
+from byteit.exceptions import (
+    APIKeyError,           # Invalid API key
+    AuthenticationError,   # Authentication failed
+    ValidationError,       # Invalid parameters
+    ResourceNotFoundError, # Job/resource not found
+    RateLimitError,        # Rate limit exceeded
+    ServerError,           # Server-side error (5xx)
+    JobProcessingError,    # Job processing failed
+)
 
-Example:
+try:
+    result = client.parse("document.pdf")
+except ValidationError as e:
+    print(f"Invalid input: {e.message}")
+except RateLimitError:
+    print("Rate limit exceeded - please wait")
+except JobProcessingError as e:
+    print(f"Processing failed: {e.message}")
+```
+
+All exceptions inherit from `ByteITError`:
 
 ```python
 from byteit.exceptions import ByteITError
 
 try:
-    job = client.create_job(input_connector)
+    result = client.parse("document.pdf")
 except ByteITError as e:
-    print(f"Error: {e}")
+    print(f"ByteIT error: {e.message}")
+    print(f"Status code: {e.status_code}")
+    print(f"Response: {e.response}")
 ```
 
-## Examples
+---
 
-See [`examples`](examples ) for full scripts.
-
-### Basic Local File Processing
-
-```python
-from byteit import ByteITClient
-from byteit.connectors import LocalFileInputConnector
-
-client = ByteITClient(api_key="your-key")
-input_conn = LocalFileInputConnector("sample_document.pdf")
-
-result = client.process_document(input_conn, output_path="output.txt")
-print(f"Result saved to: {result}")
-```
-
-### S3 to S3 Processing
-
-```python
-from byteit.connectors import S3InputConnector, S3OutputConnector
-
-input_conn = S3InputConnector("bucket", "input/file.pdf")
-output_conn = S3OutputConnector("bucket", "output/")
-
-job = client.create_job(input_conn, output_conn)
-client.wait_for_job(job.id)
-```
+## Advanced Usage
 
 ### Batch Processing
 
-```python
-input_conns = [
-    LocalFileInputConnector("doc1.pdf"),
-    LocalFileInputConnector("doc2.pdf")
-]
+Process multiple files efficiently:
 
-results = client.process_document(input_conns, output_path=["out1.txt", "out2.txt"])
+```python
+files = ["doc1.pdf", "doc2.pdf", "doc3.pdf"]
+results = []
+
+for file in files:
+    result = client.parse(file, output_format="json")
+    results.append(result)
 ```
 
-## Best Practices
+### Custom Output Paths
 
-- Use context managers for client lifecycle.
-- Validate inputs before processing.
-- Handle exceptions appropriately.
-- For batch jobs
-- Follow PEP 8 and include docstrings/type hints as per Python instructions.
+Organize results systematically:
 
-For more details, refer to the source code in [`byteit`](byteit ).
+```python
+from pathlib import Path
+
+input_dir = Path("inputs")
+output_dir = Path("outputs")
+output_dir.mkdir(exist_ok=True)
+
+for pdf_file in input_dir.glob("*.pdf"):
+    output_file = output_dir / f"{pdf_file.stem}.txt"
+    client.parse(pdf_file, output=output_file)
+```
+
+### S3 Workflow
+
+High-volume cloud processing:
+
+```python
+from byteit.connectors import S3InputConnector
+
+# Process multiple S3 files
+s3_files = [
+    "invoices/2024-01.pdf",
+    "invoices/2024-02.pdf",
+    "invoices/2024-03.pdf",
+]
+
+for s3_path in s3_files:
+    connector = S3InputConnector(
+        source_bucket="my-documents",
+        source_path_inside_bucket=s3_path
+    )
+    result = client.parse(connector, output_format="json")
+    # Process result...
+```
+
+---
+
+## Configuration
+
+### Environment Variables
+
+Set your API key via environment variable:
+
+```bash
+export BYTEIT_API_KEY="your_api_key_here"
+```
+
+```python
+import os
+from byteit import ByteITClient
+
+client = ByteITClient(api_key=os.getenv("BYTEIT_API_KEY"))
+```
+
+### Custom Base URL
+
+For testing or custom deployments:
+
+```python
+from byteit import ByteITClient
+
+# Set custom URL (for development/testing)
+ByteITClient.BASE_URL = "http://localhost:8000"
+client = ByteITClient(api_key="test_key")
+```
+
+---
+
+## Testing
+
+The SDK includes comprehensive unit and integration tests.
+
+### Run Unit Tests
+
+```bash
+pytest
+```
+
+### Run Integration Tests
+
+Integration tests require a running ByteIT API and valid API key:
+
+```bash
+export BYTEIT_API_KEY="your_api_key"
+pytest -m integration
+```
+
+### Run All Tests
+
+```bash
+pytest -m ""
+```
+
+---
+
+## Requirements
+
+- Python 3.8+
+- `requests` library
+
+---
+
+## Examples
+
+See the `examples/` directory for complete working examples:
+
+- `simple_example.py` - Basic usage patterns
+- S3 integration
+- Batch processing
+- Error handling
+
+---
+
+## About ByteIT
+
+ByteIT transforms unstructured documents into clean, structured data with AI-powered precision. Built for scale, designed for developers.
+
+**Get started today:** [Start Processing Free](https://byteit.ai/pricing) - 1,000 free pages/month
+
+---
+
+## Support & Resources
+
+- **Website:** [https://byteit.ai](https://byteit.ai)
+- **Pricing:** [https://byteit.ai/pricing](https://byteit.ai/pricing)
+- **Support:** [https://byteit.ai/support](https://byteit.ai/support)
+- **Contact:** [https://byteit.ai/contact](https://byteit.ai/contact)
+- **LinkedIn:** [ByteIT on LinkedIn](https://www.linkedin.com/company/byteit-ai)
+
+---
+
+## Legal
+
+© 2026 ByteIT GmbH. All rights reserved.
+
+- **Privacy Policy:** [https://byteit.ai/privacy-policy](https://byteit.ai/privacy-policy)
+- **Terms of Service:** [https://byteit.ai/terms](https://byteit.ai/terms)
+- **Impressum:** [https://byteit.ai/impressum](https://byteit.ai/impressum)
+
+This project is licensed under the terms specified in the [LICENSE](LICENSE) file.

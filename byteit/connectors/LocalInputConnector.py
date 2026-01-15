@@ -6,12 +6,22 @@ from typing import Any, Dict, Tuple
 from .base import InputConnector
 
 
-class LocalFileInputConnector(InputConnector):
-    """
-    Input connector for local files on the machine.
+class LocalInputConnector(InputConnector):
+    """Local file input connector.
 
-    This connector reads files from the local filesystem and uploads them
-    to ByteIT for processing.
+    Reads files from your local filesystem and uploads them to ByteIT.
+    The file is read and transmitted from your machine to ByteIT servers.
+
+    Args:
+        file_path: Path to the local file
+
+    Raises:
+        FileNotFoundError: File doesn't exist at specified path
+        ValueError: Path is a directory, not a file
+
+    Example:
+        connector = LocalInputConnector("/path/to/document.pdf")
+        result = client.parse(connector)
     """
 
     def __init__(self, file_path: str):

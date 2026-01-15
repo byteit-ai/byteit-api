@@ -5,7 +5,15 @@ from typing import Any, Dict, Tuple
 
 
 class InputConnector(ABC):
-    """Base class for input connectors that provide file data to ByteIT."""
+    """Abstract base for input data sources.
+
+    Input connectors define how ByteIT accesses documents for processing.
+    Implementations handle local files, S3 buckets, and other data sources.
+
+    Subclasses must implement:
+        - get_file_data(): Returns file data for upload or connection info
+        - to_dict(): Serializes connector configuration for API
+    """
 
     @abstractmethod
     def get_file_data(self) -> Tuple[str, Any]:
@@ -29,7 +37,14 @@ class InputConnector(ABC):
 
 
 class OutputConnector(ABC):
-    """Base class for output connectors that handle processed results."""
+    """Abstract base for output destinations.
+
+    Output connectors define where ByteIT stores processed results.
+    Implementations handle local storage, S3 buckets, and other destinations.
+
+    Subclasses must implement:
+        - to_dict(): Serializes connector configuration for API
+    """
 
     @abstractmethod
     def to_dict(self) -> Dict[str, Any]:

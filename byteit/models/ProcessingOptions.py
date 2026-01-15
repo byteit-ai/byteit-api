@@ -13,12 +13,18 @@ def _default_list() -> List[str]:
 
 @dataclass
 class ProcessingOptions:
-    """
-    Document processing options value object.
+    """Document processing configuration.
 
-    Only 'languages' and 'page_range' are sent to the backend as
-    processing_options. The 'output_format' is extracted and sent
-    as a top-level parameter in the API request.
+    Specifies how documents should be processed by ByteIT.
+
+    Attributes:
+        languages: List of language codes for OCR/parsing (default: ['en'])
+        page_range: Specific pages to process (e.g., '1-5' or '1,3,5')
+        output_format: Desired output format (txt, json, html, md)
+
+    Note:
+        The output_format is extracted and sent separately in API requests,
+        while languages and page_range are sent as processing_options.
     """
 
     languages: List[str] = field(default_factory=_default_list)

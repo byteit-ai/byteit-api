@@ -6,7 +6,17 @@ from typing import Optional
 
 @dataclass
 class DocumentMetadata:
-    """Metadata information about a document."""
+    """Document metadata information.
+
+    Contains information about the original document being processed.
+
+    Attributes:
+        original_filename: Original name of the uploaded file
+        document_type: Type/format of document (pdf, docx, etc.)
+        page_count: Number of pages in document (if applicable)
+        language: Document language code (default: 'en')
+        encoding: Character encoding (default: 'utf-8')
+    """
 
     original_filename: str
     document_type: str

@@ -1,6 +1,6 @@
 """ByteIT Python Client Library for text extraction."""
 
-from .api_client import ByteITClient
+from .ByteITClient import ByteITClient
 from .exceptions import (
     APIKeyError,
     AuthenticationError,
@@ -20,8 +20,8 @@ from .models.OutputFormat import OutputFormat
 from .connectors import (
     InputConnector,
     OutputConnector,
-    LocalFileInputConnector,
-    ByteITStorageOutputConnector,
+    LocalInputConnector,
+    LocalOutputConnector,
 )
 from .validations import validate_processing_options
 
@@ -36,8 +36,8 @@ __all__ = [
     "OutputFormat",
     "InputConnector",
     "OutputConnector",
-    "LocalFileInputConnector",
-    "ByteITStorageOutputConnector",
+    "LocalInputConnector",
+    "LocalOutputConnector",
     "validate_processing_options",
     "ByteITError",
     "AuthenticationError",
