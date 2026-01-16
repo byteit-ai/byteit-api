@@ -5,14 +5,14 @@ from pathlib import Path
 from unittest.mock import Mock, patch, mock_open
 
 from byteit.connectors import (
-    LocalInputConnector,
+    LocalFileInputConnector,
     S3InputConnector,
-    LocalOutputConnector,
+    LocalFileOutputConnector,
 )
 
 
-class TestLocalInputConnector:
-    """Test LocalInputConnector."""
+class TestLocalFileInputConnector:
+    """Test LocalFileInputConnector."""
 
     @patch("pathlib.Path.exists")
     @patch("pathlib.Path.is_file")
@@ -21,7 +21,7 @@ class TestLocalInputConnector:
         mock_exists.return_value = True
         mock_is_file.return_value = True
 
-        connector = LocalInputConnector("test.pdf")
+        connector = LocalFileInputConnector("test.pdf")
 
         assert connector.file_path == Path("test.pdf")
 
@@ -31,7 +31,7 @@ class TestLocalInputConnector:
         mock_exists.return_value = False
 
         with pytest.raises(FileNotFoundError, match="File not found"):
-            LocalInputConnector("missing.pdf")
+            LocalFileInputConnector("missing.pdf")
 
     @patch("pathlib.Path.exists")
     @patch("pathlib.Path.is_file")
@@ -41,7 +41,7 @@ class TestLocalInputConnector:
         mock_is_file.return_value = False
 
         with pytest.raises(ValueError, match="Path is not a file"):
-            LocalInputConnector("some_directory")
+            LocalFileInputConnector("some_directory")
 
     @patch("pathlib.Path.exists")
     @patch("pathlib.Path.is_file")
@@ -51,7 +51,7 @@ class TestLocalInputConnector:
         mock_exists.return_value = True
         mock_is_file.return_value = True
 
-        connector = LocalInputConnector("test.pdf")
+        connector = LocalFileInputConnector("test.pdf")
         filename, file_obj = connector.get_file_data()
 
         assert filename == "test.pdf"
@@ -64,7 +64,7 @@ class TestLocalInputConnector:
         mock_exists.return_value = True
         mock_is_file.return_value = True
 
-        connector = LocalInputConnector("test.pdf")
+        connector = LocalFileInputConnector("test.pdf")
         result = connector.to_dict()
 
         assert result["type"] == "localfile"
@@ -122,7 +122,7 @@ class TestLocalOutputConnector:
 
     def test_to_dict(self):
         """to_dict returns local connector config."""
-        connector = LocalOutputConnector()
+        connector = LocalFileOutputConnector()
         result = connector.to_dict()
 
-        assert result["type"] == "local"
+        assert result["type"] == "localfile"

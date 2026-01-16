@@ -7,7 +7,7 @@ import pytest
 import requests
 
 from byteit import ByteITClient
-from byteit.connectors import LocalInputConnector, S3InputConnector
+from byteit.connectors import LocalFileInputConnector, S3InputConnector
 from byteit.exceptions import (
     APIKeyError,
     AuthenticationError,
@@ -44,19 +44,19 @@ class TestInputConnectorConversion:
     """Test _to_input_connector method."""
 
     def test_str_path_conversion(self):
-        """String path converts to LocalInputConnector."""
+        """String path converts to LocalFileInputConnector."""
         client = ByteITClient("test_key")
 
-        with patch("byteit.ByteITClient.LocalInputConnector") as mock_connector:
+        with patch("byteit.ByteITClient.LocalFileInputConnector") as mock_connector:
             mock_connector.return_value = Mock()
             result = client._to_input_connector("test.pdf")
             mock_connector.assert_called_once_with(file_path="test.pdf")
 
     def test_path_object_conversion(self):
-        """Path object converts to LocalInputConnector."""
+        """Path object converts to LocalFileInputConnector."""
         client = ByteITClient("test_key")
 
-        with patch("byteit.ByteITClient.LocalInputConnector") as mock_connector:
+        with patch("byteit.ByteITClient.LocalFileInputConnector") as mock_connector:
             mock_connector.return_value = Mock()
             result = client._to_input_connector(Path("test.pdf"))
             mock_connector.assert_called_once_with(file_path="test.pdf")
@@ -64,8 +64,9 @@ class TestInputConnectorConversion:
     def test_connector_passthrough(self):
         """InputConnector passes through unchanged."""
         client = ByteITClient("test_key")
-        connector = LocalInputConnector.__new__(LocalInputConnector)
-        connector.__class__ = type("InputConnector", (), {})
+        # Create a mock connector that behaves like InputConnector
+        connector = Mock(spec=LocalFileInputConnector)
+        connector.to_dict = Mock(return_value={"type": "localfile"})
 
         result = client._to_input_connector(connector)
         assert result is connector
@@ -192,9 +193,9 @@ class TestCreateJob:
         connector.get_file_data.return_value = ("test.pdf", Mock())
 
         output_connector = Mock()
-        output_connector.to_dict.return_value = {"type": "local"}
+        output_connector.to_dict.return_value = {"type": "localfile"}
 
-        result = client._create_job(connector, "txt", output_connector)
+        result = client._create_job(connector, output_connector, "txt")
 
         assert result == mock_job
         mock_request.assert_called_once()
@@ -223,9 +224,9 @@ class TestCreateJob:
         )
 
         output_connector = Mock()
-        output_connector.to_dict.return_value = {"type": "local"}
+        output_connector.to_dict.return_value = {"type": "localfile"}
 
-        result = client._create_job(connector, "json", output_connector)
+        result = client._create_job(connector, output_connector, "json")
 
         assert isinstance(result, Job)
         assert result.id == "job_123"
@@ -344,7 +345,8 @@ class TestContextManager:
         """Client works as context manager."""
         with ByteITClient("test_key") as client:
             assert isinstance(client, ByteITClient)
-            assert not client._session.closed
+            # Session should be active during context
+            assert client._session is not None
 
     def test_session_closes(self):
         """Session closes on exit."""

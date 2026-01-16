@@ -6,7 +6,7 @@ from typing import Any, Dict, Tuple
 from .base import InputConnector
 
 
-class LocalInputConnector(InputConnector):
+class LocalFileInputConnector(InputConnector):
     """Local file input connector.
 
     Reads files from your local filesystem and uploads them to ByteIT.
@@ -20,7 +20,7 @@ class LocalInputConnector(InputConnector):
         ValueError: Path is a directory, not a file
 
     Example:
-        connector = LocalInputConnector("/path/to/document.pdf")
+        connector = LocalFileInputConnector("/path/to/document.pdf")
         result = client.parse(connector)
     """
 

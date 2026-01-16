@@ -165,14 +165,14 @@ Download result for a completed job.
 
 ## Connectors
 
-### LocalInputConnector
+### LocalFileInputConnector
 
 Read files from local filesystem.
 
 ```python
-from byteit.connectors import LocalInputConnector
+from byteit.connectors import LocalFileInputConnector
 
-connector = LocalInputConnector("path/to/file.pdf")
+connector = LocalFileInputConnector("path/to/file.pdf")
 result = client.parse(connector)
 ```
 

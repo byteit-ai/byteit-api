@@ -10,10 +10,10 @@ import requests
 
 
 from .connectors import (
-    LocalOutputConnector,
+    LocalFileOutputConnector,
     InputConnector,
     OutputConnector,
-    LocalInputConnector,
+    LocalFileInputConnector,
 )
 from .exceptions import (
     APIKeyError,
@@ -51,7 +51,8 @@ class ByteITClient:
     """
 
     # BASE_URL = "https://api.byteit.ai"
-    BASE_URL = "http://127.0.0.1:8000"
+    # BASE_URL = "http://127.0.0.1:8000"
+    BASE_URL = "https://heinzelai.com"
     DEFAULT_TIMEOUT = 30
 
     def __init__(self, api_key: str):
@@ -183,13 +184,13 @@ class ByteITClient:
         self, input: Union[str, Path, InputConnector]
     ) -> InputConnector:
         """Convert various input types to InputConnector."""
-        # Already a connector
-        if type(input) == InputConnector:
+        # Already a connector (checks for InputConnector or its subclasses)
+        if isinstance(input, InputConnector):
             return input
 
         # String or Path - local file
         if isinstance(input, (str, Path)):
-            return LocalInputConnector(file_path=str(input))
+            return LocalFileInputConnector(file_path=str(input))
 
         raise ValidationError(
             f"Unsupported input type: {type(input)}. "
@@ -200,7 +201,7 @@ class ByteITClient:
         """Convert output specification to OutputConnector."""
         # Always use ByteIT storage (simplest approach)
         # If output is a file path, we download and save after completion
-        return LocalOutputConnector()
+        return LocalFileOutputConnector()
 
     # ==================== INTERNAL METHODS ====================
 
@@ -333,8 +334,13 @@ class ByteITClient:
             return response.json() if response.content else {}
 
         # Error path - extract details
-        data: Dict[str, Any] = response.json() if response.content else {}
-        message: str = data.get("detail", "") or response.text or "Request failed"
+        try:
+            data: Dict[str, Any] = response.json() if response.content else {}
+            message: str = data.get("detail", "") or response.text or "Request failed"
+        except (ValueError, requests.exceptions.JSONDecodeError):
+            # Response is not JSON (e.g., HTML error page)
+            data = {}
+            message = response.text or f"Request failed with status {response.status_code}"
 
         # Map status to exception
         ERROR_MAP: Dict[int, Type[Exception]] = {

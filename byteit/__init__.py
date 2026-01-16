@@ -20,8 +20,8 @@ from .models.OutputFormat import OutputFormat
 from .connectors import (
     InputConnector,
     OutputConnector,
-    LocalInputConnector,
-    LocalOutputConnector,
+    LocalFileInputConnector,
+    LocalFileOutputConnector,
 )
 from .validations import validate_processing_options
 
@@ -36,8 +36,8 @@ __all__ = [
     "OutputFormat",
     "InputConnector",
     "OutputConnector",
-    "LocalInputConnector",
-    "LocalOutputConnector",
+    "LocalFileInputConnector",
+    "LocalFileOutputConnector",
     "validate_processing_options",
     "ByteITError",
     "AuthenticationError",

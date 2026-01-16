@@ -8,7 +8,7 @@ import os
 import pytest
 from pathlib import Path
 from byteit import ByteITClient
-from byteit.connectors import LocalInputConnector
+from byteit.connectors import LocalFileInputConnector
 
 
 # Skip integration tests by default

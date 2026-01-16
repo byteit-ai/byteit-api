@@ -1,8 +1,8 @@
 """Connector classes for ByteIT file input and output operations."""
 
 from .base import InputConnector, OutputConnector
-from .LocalInputConnector import LocalInputConnector
-from .LocalOutputConnector import LocalOutputConnector
+from .LocalFileInputConnector import LocalFileInputConnector
+from .LocalFileOutputConnector import LocalFileOutputConnector
 
 # S3 connectors are optional and require boto3
 try:
@@ -18,8 +18,8 @@ except ImportError:
 __all__ = [
     "InputConnector",
     "OutputConnector",
-    "LocalInputConnector",
-    "LocalOutputConnector",
+    "LocalFileInputConnector",
+    "LocalFileOutputConnector",
 ]
 
 if _s3_available:
