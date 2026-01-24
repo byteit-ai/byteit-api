@@ -53,7 +53,7 @@ class ByteITClient:
     # BASE_URL = "https://api.byteit.ai"
     # BASE_URL = "http://127.0.0.1:8000"
     BASE_URL = "https://heinzelai.com"
-    DEFAULT_TIMEOUT = 30
+    DEFAULT_TIMEOUT = 60 * 10  # 10 minutes
 
     def __init__(self, api_key: str):
         """
@@ -109,6 +109,7 @@ class ByteITClient:
             # Different format
             json_result = client.parse("doc.pdf", result_format="json")
         """
+        print("Starting document parsing...")
         # Convert input to connector as early as possible
         input_connector = self._to_input_connector(input)
 
@@ -121,6 +122,7 @@ class ByteITClient:
             output_connector=output_connector,
             result_format=result_format,
         )
+        print(f"Job {job.id} created. Waiting for completion...")
         self._wait_for_completion(job.id)
 
         # Download result
@@ -180,22 +182,14 @@ class ByteITClient:
 
     # ==================== CONNECTOR CONVERTERS ====================
 
-    def _to_input_connector(
-        self, input: Union[str, Path, InputConnector]
-    ) -> InputConnector:
+    def _to_input_connector(self, input: Union[str, Path, InputConnector]) -> InputConnector:
         """Convert various input types to InputConnector."""
         # Already a connector (checks for InputConnector or its subclasses)
         if isinstance(input, InputConnector):
             return input
 
         # String or Path - local file
-        if isinstance(input, (str, Path)):
-            return LocalFileInputConnector(file_path=str(input))
-
-        raise ValidationError(
-            f"Unsupported input type: {type(input)}. "
-            "Use str, Path, or InputConnector (e.g., S3InputConnector)"
-        )
+        return LocalFileInputConnector(file_path=str(input))
 
     def _to_output_connector(self, output: Union[None, str, Path]):
         """Convert output specification to OutputConnector."""
@@ -212,9 +206,7 @@ class ByteITClient:
         result_format: str,
     ) -> Job:
         """Create a processing job."""
-        connector_type = (
-            input_connector.to_dict().get("type", "localfile").strip().lower()
-        )
+        connector_type = input_connector.to_dict().get("type", "localfile").strip().lower()
 
         # Build base request data
         data: Dict[str, Any] = {
@@ -245,9 +237,7 @@ class ByteITClient:
 
         # Make request with cleanup
         try:
-            response = self._request(
-                "POST", f"{API_BASE}/{JOBS_PATH}/", files=files, data=data
-            )
+            response = self._request("POST", f"{API_BASE}/{JOBS_PATH}/", files=files, data=data)
         finally:
             if file_obj and hasattr(file_obj, "close") and not file_obj.closed:
                 file_obj.close()
@@ -277,6 +267,9 @@ class ByteITClient:
 
     def _wait_for_completion(self, job_id: str) -> Job:
         """Wait for job to complete (polls every 2 seconds)."""
+        MAX_INTERVAL = 10  # Max 10 seconds
+        poll_interval = 2  # Start at 2 seconds
+
         while True:
             job = self._get_job_status(job_id)
 
@@ -284,11 +277,10 @@ class ByteITClient:
                 return job
 
             if job.is_failed:
-                raise JobProcessingError(
-                    f"Job failed: {job.processing_error or 'Unknown error'}"
-                )
+                raise JobProcessingError(f"Job failed: {job.processing_error or 'Unknown error'}")
 
-            time.sleep(2)
+            time.sleep(poll_interval)
+            poll_interval = min(poll_interval + 1, MAX_INTERVAL)
 
     def _download_result(self, job_id: str) -> bytes:
         """Download job result."""
@@ -340,9 +332,7 @@ class ByteITClient:
         except (ValueError, requests.exceptions.JSONDecodeError):
             # Response is not JSON (e.g., HTML error page)
             data = {}
-            message = (
-                response.text or f"Request failed with status {response.status_code}"
-            )
+            message = response.text or f"Request failed with status {response.status_code}"
 
         # Map status to exception
         ERROR_MAP: Dict[int, Type[Exception]] = {

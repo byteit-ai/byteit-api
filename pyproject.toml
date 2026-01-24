@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "byteit"
-version = "0.1.0"
+version = "0.1.1"
 description = "AI-powered document intelligence platform - Turn your data into structured data with a single line of code."
 readme = "README.md"
 requires-python = ">=3.8"
