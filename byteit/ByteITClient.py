@@ -27,6 +27,7 @@ from .exceptions import (
 )
 from .models.Job import Job
 from .models.JobList import JobList
+from .progress import ProgressTracker
 
 # API configuration
 API_VERSION = "v1"
@@ -52,8 +53,8 @@ class ByteITClient:
 
     # BASE_URL = "https://api.byteit.ai"
     # BASE_URL = "http://127.0.0.1:8000"
-    BASE_URL = "https://heinzelai.com"
-    DEFAULT_TIMEOUT = 60 * 10  # 10 minutes
+    BASE_URL = "https://byteit.ai"
+    DEFAULT_TIMEOUT = 60 * 30  # 30 minutes
 
     def __init__(self, api_key: str):
         """
@@ -123,7 +124,7 @@ class ByteITClient:
             result_format=result_format,
         )
         print(f"Job {job.id} created. Waiting for completion...")
-        self._wait_for_completion(job.id)
+        self._wait_for_completion(job.id, input_connector=input_connector)
 
         # Download result
         result_bytes = self._download_result(job.id)
@@ -132,6 +133,9 @@ class ByteITClient:
         if isinstance(output, (str, Path)):
             output_path = Path(output)
             output_path.write_bytes(result_bytes)
+        elif output is None:
+            # Try to display in notebook if available
+            self._try_display_result(result_bytes, result_format)
 
         return result_bytes
 
@@ -189,6 +193,9 @@ class ByteITClient:
             return input
 
         # String or Path - local file
+        if not isinstance(input, (str, Path)):
+            raise ValidationError(f"Unsupported input type: {type(input).__name__}")
+        
         return LocalFileInputConnector(file_path=str(input))
 
     def _to_output_connector(self, output: Union[None, str, Path]):
@@ -265,22 +272,28 @@ class ByteITClient:
             detail=response.get("detail", ""),
         )
 
-    def _wait_for_completion(self, job_id: str) -> Job:
-        """Wait for job to complete (polls every 2 seconds)."""
-        MAX_INTERVAL = 10  # Max 10 seconds
-        poll_interval = 2  # Start at 2 seconds
+    def _wait_for_completion(
+        self, job_id: str, input_connector: Optional[InputConnector] = None
+    ) -> Job:
+        """Wait for job to complete with adaptive polling: MIN(1*1.5^(x-1), 10)."""
+        tracker = ProgressTracker(input_connector)
+        iteration = 1
 
         while True:
             job = self._get_job_status(job_id)
+            tracker.update(job)
 
             if job.is_completed:
+                tracker.finalize()
                 return job
 
             if job.is_failed:
+                tracker.close()
                 raise JobProcessingError(f"Job failed: {job.processing_error or 'Unknown error'}")
 
+            poll_interval = min(1 * (1.5 ** (iteration - 1)), 10)
             time.sleep(poll_interval)
-            poll_interval = min(poll_interval + 1, MAX_INTERVAL)
+            iteration += 1
 
     def _download_result(self, job_id: str) -> bytes:
         """Download job result."""
@@ -351,6 +364,31 @@ class ByteITClient:
             raise ServerError(message, response.status_code, data)
 
         raise ByteITError(message, response.status_code, data)
+
+    def _try_display_result(self, result_bytes: bytes, result_format: str) -> None:
+        """Try to display result in notebook environment."""
+        try:
+            # Check if we're in a notebook environment
+            from IPython.display import display, JSON, Markdown, HTML
+            
+            content = result_bytes.decode('utf-8', errors='replace')
+            
+            if result_format == 'json':
+                import json
+                try:
+                    data = json.loads(content)
+                    display(JSON(data, expanded=True))
+                except json.JSONDecodeError:
+                    display(Markdown(f"```json\n{content}\n```"))
+            elif result_format == 'md':
+                display(Markdown(content))
+            elif result_format == 'html':
+                display(HTML(content))
+            else:  # txt or unknown
+                display(Markdown(f"```\n{content}\n```"))
+        except ImportError:
+            # Not in a notebook, do nothing
+            pass
 
     # ==================== CONTEXT MANAGER ====================
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "byteit"
-version = "0.1.1"
+version = "0.1.2"
 description = "AI-powered document intelligence platform - Turn your data into structured data with a single line of code."
 readme = "README.md"
 requires-python = ">=3.8"
@@ -39,6 +39,7 @@ classifiers = [
 
 dependencies = [
     "requests>=2.28.0",
+    "tqdm>=4.65.0",
 ]
 
 [project.optional-dependencies]
@@ -48,7 +49,7 @@ dev = [
     "black>=23.0.0",
     "isort>=5.0.0",
     "flake8>=6.0.0",
-    "mypy>=1.0.0",
+    "mypy>=1.0.0"
 ]
 
 [project.urls]
@@ -60,6 +61,7 @@ Contact = "https://byteit.ai/contact"
 
 [tool.setuptools]
 packages = ["byteit", "byteit.connectors", "byteit.models"]
+include-package-data = true
 
 [tool.setuptools.package-data]
 byteit = ["py.typed"]

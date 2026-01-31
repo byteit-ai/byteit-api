@@ -25,7 +25,17 @@ from .connectors import (
 )
 from .validations import validate_processing_options
 
-__version__ = "0.1.0"
+
+try:
+    from importlib.metadata import version, PackageNotFoundError
+except ImportError:
+    # For Python <3.8
+    from importlib_metadata import version, PackageNotFoundError  # type: ignore
+
+try:
+    __version__ = version("byteit")
+except PackageNotFoundError:
+    __version__ = "0.1.2"  # fallback, keep in sync with pyproject.toml
 
 __all__ = [
     "ByteITClient",

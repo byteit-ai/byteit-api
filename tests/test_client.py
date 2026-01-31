@@ -235,9 +235,12 @@ class TestCreateJob:
 class TestWaitForCompletion:
     """Test _wait_for_completion method."""
 
+    @patch("byteit.ByteITClient.ProgressTracker")
     @patch.object(ByteITClient, "_get_job_status")
     @patch("time.sleep")
-    def test_wait_returns_on_completion(self, mock_sleep, mock_get_status):
+    def test_wait_returns_on_completion(
+        self, mock_sleep, mock_get_status, mock_tracker
+    ):
         """Polling stops when job completes."""
         client = ByteITClient("test_key")
 
@@ -255,10 +258,13 @@ class TestWaitForCompletion:
 
         assert result == job_complete
         assert mock_get_status.call_count == 2
-        mock_sleep.assert_called_once_with(2)
+        mock_sleep.assert_called_once_with(1.0)
+        mock_tracker.return_value.update.assert_called()
+        mock_tracker.return_value.finalize.assert_called_once()
 
+    @patch("byteit.ByteITClient.ProgressTracker")
     @patch.object(ByteITClient, "_get_job_status")
-    def test_wait_raises_on_failure(self, mock_get_status):
+    def test_wait_raises_on_failure(self, mock_get_status, mock_tracker):
         """Failed job raises JobProcessingError."""
         client = ByteITClient("test_key")
 
@@ -271,6 +277,40 @@ class TestWaitForCompletion:
 
         with pytest.raises(JobProcessingError, match="Parse error"):
             client._wait_for_completion("job_123")
+        mock_tracker.return_value.close.assert_called_once()
+
+    @patch("byteit.ByteITClient.ProgressTracker")
+    @patch.object(ByteITClient, "_get_job_status")
+    @patch("time.sleep")
+    def test_wait_adaptive_polling_formula(
+        self, mock_sleep, mock_get_status, mock_tracker
+    ):
+        """Polling intervals follow MIN(1*1.5^(x-1), 10) formula."""
+        client = ByteITClient("test_key")
+
+        job_processing = Mock()
+        job_processing.is_completed = False
+        job_processing.is_failed = False
+
+        job_complete = Mock()
+        job_complete.is_completed = True
+        job_complete.is_failed = False
+
+        mock_get_status.side_effect = [
+            job_processing,
+            job_processing,
+            job_processing,
+            job_complete,
+        ]
+
+        client._wait_for_completion("job_123")
+
+        # Check polling intervals: x=1: 1.0, x=2: 1.5, x=3: 2.25
+        assert mock_sleep.call_count == 3
+        calls = [call[0][0] for call in mock_sleep.call_args_list]
+        assert calls[0] == 1.0
+        assert calls[1] == 1.5
+        assert calls[2] == 2.25
 
 
 class TestParse:
@@ -302,8 +342,35 @@ class TestParse:
         assert result == b"parsed content"
         mock_to_input.assert_called_once_with("test.pdf")
         mock_create.assert_called_once()
-        mock_wait.assert_called_once_with("job_123")
+        mock_wait.assert_called_once_with("job_123", input_connector=mock_connector)
         mock_download.assert_called_once_with("job_123")
+
+    @patch.object(ByteITClient, "_try_display_result")
+    @patch.object(ByteITClient, "_download_result")
+    @patch.object(ByteITClient, "_wait_for_completion")
+    @patch.object(ByteITClient, "_create_job")
+    @patch.object(ByteITClient, "_to_input_connector")
+    @patch.object(ByteITClient, "_to_output_connector")
+    def test_parse_calls_display_when_no_output(
+        self, mock_to_output, mock_to_input, mock_create, mock_wait, mock_download, mock_display
+    ):
+        """Parse calls display when output is None."""
+        client = ByteITClient("test_key")
+
+        mock_connector = Mock()
+        mock_to_input.return_value = mock_connector
+        mock_to_output.return_value = Mock()
+
+        mock_job = Mock()
+        mock_job.id = "job_123"
+        mock_create.return_value = mock_job
+
+        mock_download.return_value = b"parsed content"
+
+        result = client.parse("test.pdf", result_format="json")
+
+        assert result == b"parsed content"
+        mock_display.assert_called_once_with(b"parsed content", "json")
 
     @patch.object(ByteITClient, "_download_result")
     @patch.object(ByteITClient, "_wait_for_completion")
@@ -323,7 +390,8 @@ class TestParse:
         """Parse with output path saves file."""
         client = ByteITClient("test_key")
 
-        mock_to_input.return_value = Mock()
+        mock_connector = Mock()
+        mock_to_input.return_value = mock_connector
         mock_to_output.return_value = Mock()
 
         mock_job = Mock()
@@ -336,6 +404,7 @@ class TestParse:
 
         assert result == b"parsed content"
         mock_write.assert_called_once_with(b"parsed content")
+        mock_wait.assert_called_once_with("job_123", input_connector=mock_connector)
 
 
 class TestContextManager:
@@ -398,3 +467,63 @@ class TestGetJobs:
 
         assert result == b"result content"
         mock_download.assert_called_once_with("job_123")
+
+
+class TestDisplayResult:
+    """Test _try_display_result method."""
+
+    def test_display_json_in_notebook(self):
+        """Display JSON when IPython is available."""
+        client = ByteITClient("test_key")
+        
+        with patch("IPython.display.display") as mock_display:
+            with patch("IPython.display.JSON") as mock_json:
+                json_data = b'{"key": "value"}'
+                client._try_display_result(json_data, "json")
+                
+                mock_json.assert_called_once()
+                mock_display.assert_called_once()
+
+    def test_display_markdown_in_notebook(self):
+        """Display Markdown when IPython is available."""
+        client = ByteITClient("test_key")
+        
+        with patch("IPython.display.display") as mock_display:
+            with patch("IPython.display.Markdown") as mock_md:
+                md_data = b"# Header"
+                client._try_display_result(md_data, "md")
+                
+                mock_md.assert_called_once()
+                mock_display.assert_called_once()
+
+    def test_display_html_in_notebook(self):
+        """Display HTML when IPython is available."""
+        client = ByteITClient("test_key")
+        
+        with patch("IPython.display.display") as mock_display:
+            with patch("IPython.display.HTML") as mock_html:
+                html_data = b"<h1>Header</h1>"
+                client._try_display_result(html_data, "html")
+                
+                mock_html.assert_called_once()
+                mock_display.assert_called_once()
+
+    def test_display_text_in_notebook(self):
+        """Display text with code block when IPython is available."""
+        client = ByteITClient("test_key")
+        
+        with patch("IPython.display.display") as mock_display:
+            with patch("IPython.display.Markdown") as mock_md:
+                text_data = b"Plain text"
+                client._try_display_result(text_data, "txt")
+                
+                mock_md.assert_called_once()
+                mock_display.assert_called_once()
+
+    def test_display_handles_import_error(self):
+        """Gracefully handle when IPython is not available."""
+        client = ByteITClient("test_key")
+        
+        # Should not raise an error even when IPython is not available
+        with patch("builtins.__import__", side_effect=ImportError):
+            client._try_display_result(b"test", "txt")  # Should not raise
