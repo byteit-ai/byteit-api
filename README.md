@@ -6,6 +6,7 @@ ByteIT is an AI-powered document intelligence platform that extracts clean, stru
 
 ---
 
+
 ## Why ByteIT?
 
 - **Lightning Fast** - Process documents in under 2 seconds
@@ -51,10 +52,10 @@ That's it. Your document is now structured text.
 result = client.parse("contract.pdf")
 
 # Different formats
-txt_result = client.parse("doc.pdf", output_format="txt")
-json_result = client.parse("doc.pdf", output_format="json")
-md_result = client.parse("doc.pdf", output_format="md")
-html_result = client.parse("doc.pdf", output_format="html")
+txt_result = client.parse("doc.pdf", result_format="txt")
+json_result = client.parse("doc.pdf", result_format="json")
+md_result = client.parse("doc.pdf", result_format="md")
+html_result = client.parse("doc.pdf", result_format="html")
 
 # Save to file
 client.parse("doc.pdf", output="result.txt")
@@ -119,7 +120,7 @@ Initialize the ByteIT client.
 
 **Methods:**
 
-#### `parse(input, output_format="txt", output=None)`
+#### `parse(input, result_format="txt", output=None)`
 
 Parse a document and return the result.
 
@@ -127,14 +128,14 @@ Parse a document and return the result.
 - `input` (str | Path | InputConnector): File to parse
   - `str` or `Path`: Local file path
   - `S3InputConnector`: For S3 files
-- `output_format` (str): Output format - "txt", "json", "md", or "html" (default: "txt")
+- `result_format` (str): Output format - "txt", "json", "md", or "html" (default: "txt")
 - `output` (str | Path | None): Optional file path to save result
 
 **Returns:** `bytes` - Parsed content
 
 **Example:**
 ```python
-result = client.parse("doc.pdf", output_format="json")
+result = client.parse("doc.pdf", result_format="json")
 ```
 
 #### `get_all_jobs()`
@@ -248,7 +249,7 @@ files = ["doc1.pdf", "doc2.pdf", "doc3.pdf"]
 results = []
 
 for file in files:
-    result = client.parse(file, output_format="json")
+    result = client.parse(file, result_format="json")
     results.append(result)
 ```
 
@@ -287,7 +288,7 @@ for s3_path in s3_files:
         source_bucket="my-documents",
         source_path_inside_bucket=s3_path
     )
-    result = client.parse(connector, output_format="json")
+    result = client.parse(connector, result_format="json")
     # Process result...
 ```
 
@@ -368,6 +369,7 @@ ByteIT transforms unstructured documents into clean, structured data with AI-pow
 
 ## Support & Resources
 
+- **Google Colab Notebook:** [Colab Demo](https://colab.research.google.com/drive/1mxto7MGFVqLTbGKeSvHBSUCMvN3FZ8Uw?usp=sharing)
 - **Website:** [https://byteit.ai](https://byteit.ai)
 - **Pricing:** [https://byteit.ai/pricing](https://byteit.ai/pricing)
 - **Support:** [https://byteit.ai/support](https://byteit.ai/support)
