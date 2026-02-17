@@ -64,10 +64,10 @@ By default, the output format is **Markdown (`md`)**.
 You can choose the output format depending on your pipeline needs:
 
 ```python
-txt = client.parse("doc.pdf", output_format="txt")
-json = client.parse("doc.pdf", output_format="json")
-md = client.parse("doc.pdf", output_format="md")
-html = client.parse("doc.pdf", output_format="html")
+txt = client.parse("doc.pdf", result_format="txt")
+json = client.parse("doc.pdf", result_format="json")
+md = client.parse("doc.pdf", result_format="md")
+html = client.parse("doc.pdf", result_format="html")
 ```
 
 Supported output formats:
@@ -84,7 +84,7 @@ Supported output formats:
 ```python
 client.parse(
     "doc.pdf",
-    output_format="md",
+    result_format="md",
     output="result.md"
 )
 ```
@@ -146,7 +146,7 @@ Creates a new ByteIT client.
 ```python
 parse(
     input,
-    output_format: str = "md",
+    result_format: str = "md",
     output = None
 )
 ```
@@ -156,7 +156,7 @@ Parse a document and return the extracted content.
 #### Parameters
 
 * `input` (`str | Path`): Path to a local document
-* `output_format` (`str`): Output format (`txt`, `json`, `md`, `html`)
+* `result_format` (`str`): Output format (`txt`, `json`, `md`, `html`)
 * `output` (`str | Path | None`): Optional path to save the result
 
 #### Returns
@@ -222,16 +222,31 @@ client = ByteITClient(api_key=os.getenv("BYTEIT_API_KEY"))
 
 ## About ByteIT
 
-ByteIT provides document parsing and data extraction APIs designed for backend systems and automation workflows.
+ByteIT transforms unstructured documents into clean, structured data with AI-powered precision. Built for scale, designed for developers.
 
-Website: [https://byteit.ai](https://byteit.ai)
+**Get started today:** [Start Processing Free](https://byteit.ai/pricing) - 1,000 free pages/month
 
 ---
 
-## License
+## Support & Resources
+
+- **Google Colab Notebook:** [Colab Demo](https://colab.research.google.com/drive/1mxto7MGFVqLTbGKeSvHBSUCMvN3FZ8Uw?usp=sharing)
+- **Website:** [https://byteit.ai](https://byteit.ai)
+- **Pricing:** [https://byteit.ai/pricing](https://byteit.ai/pricing)
+- **Support:** [https://byteit.ai/support](https://byteit.ai/support)
+- **Contact:** [https://byteit.ai/contact](https://byteit.ai/contact)
+- **LinkedIn:** [ByteIT on LinkedIn](https://www.linkedin.com/company/byteit-ai)
+
+---
+
+## Legal
+
+© 2026 ByteIT GmbH. All rights reserved.
+
+- **Privacy Policy:** [https://byteit.ai/privacy-policy](https://byteit.ai/privacy-policy)
+- **Terms of Service:** [https://byteit.ai/terms](https://byteit.ai/terms)
+- **Impressum:** [https://byteit.ai/impressum](https://byteit.ai/impressum)
 
 This project is licensed under the terms specified in the [LICENSE](LICENSE) file.
-
-© 2026 ByteIT GmbH
 
 ---
