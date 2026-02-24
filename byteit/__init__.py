@@ -1,6 +1,12 @@
 """ByteIT Python Client Library for text extraction."""
 
 from .ByteITClient import ByteITClient
+from .connectors import (
+    InputConnector,
+    LocalFileInputConnector,
+    LocalFileOutputConnector,
+    OutputConnector,
+)
 from .exceptions import (
     APIKeyError,
     AuthenticationError,
@@ -12,25 +18,18 @@ from .exceptions import (
     ServerError,
     ValidationError,
 )
+from .models.DocumentMetadata import DocumentMetadata
 from .models.Job import Job
 from .models.JobList import JobList
-from .models.DocumentMetadata import DocumentMetadata
-from .models.ProcessingOptions import ProcessingOptions
 from .models.OutputFormat import OutputFormat
-from .connectors import (
-    InputConnector,
-    OutputConnector,
-    LocalFileInputConnector,
-    LocalFileOutputConnector,
-)
+from .models.ProcessingOptions import ProcessingOptions
 from .validations import validate_processing_options
 
-
 try:
-    from importlib.metadata import version, PackageNotFoundError
+    from importlib.metadata import PackageNotFoundError, version
 except ImportError:
     # For Python <3.8
-    from importlib_metadata import version, PackageNotFoundError  # type: ignore
+    from importlib_metadata import PackageNotFoundError, version  # type: ignore
 
 try:
     __version__ = version("byteit")

@@ -1,0 +1,67 @@
+
+# Exclude a variety of commonly ignored directories.
+include = ["*.py", "*.pyi", "**/pyproject.toml"]
+
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".github",
+    ".git-rewrite",
+    ".hg",
+    ".ipynb",
+    ".ipynb_checkpoints",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pyenv",
+    ".pytest_cache",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    ".vscode",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "site-packages",
+    "venv",
+]
+
+line-length = 80
+indent-width = 4
+
+target-version = "py312"
+
+[lint]
+select = [
+    "E",      # pycodestyle errors (basic style violations)
+    "W",      # pycodestyle warnings (style warnings)
+    "F",      # pyflakes (logical errors, unused imports, undefined names)
+    "I",      # isort (import sorting and grouping)
+    "N",      # pep8-naming (enforce naming conventions)
+    "D",      # pydocstyle (docstring conventions, Google style enabled)
+    "UP",     # pyupgrade (modernize syntax for your Python version)
+    "B",      # bugbear (common bug patterns and risky constructs)
+    "SIM",    # simplify (detect unnecessary or overly complex patterns)
+    "RET",    # return rules (improve return statement clarity)
+    "ARG",    # unused arguments detection
+    "C90",    # mccabe complexity (limit function complexity)
+    "RUF100", # detect unused noqa comments
+]
+
+ignore = []
+
+[lint.pydocstyle]
+convention = "google"
+
+[lint.mccabe]
+max-complexity = 10
+
+[lint.isort]
+known-third-party = ["enchant", "absl"]
+force-single-line = false

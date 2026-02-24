@@ -3,7 +3,7 @@
 from enum import Enum
 
 
-class OutputFormat(str, Enum):
+class OutputFormat(str, Enum):  # noqa: UP042
     """Supported output formats for document processing."""
 
     TXT = "txt"

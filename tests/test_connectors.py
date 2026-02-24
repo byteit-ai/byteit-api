@@ -1,13 +1,14 @@
 """Tests for connector classes."""
 
-import pytest
 from pathlib import Path
-from unittest.mock import Mock, patch, mock_open
+from unittest.mock import mock_open, patch
+
+import pytest
 
 from byteit.connectors import (
     LocalFileInputConnector,
-    S3InputConnector,
     LocalFileOutputConnector,
+    S3InputConnector,
 )
 
 
@@ -46,7 +47,7 @@ class TestLocalFileInputConnector:
     @patch("pathlib.Path.exists")
     @patch("pathlib.Path.is_file")
     @patch("builtins.open", new_callable=mock_open, read_data=b"file content")
-    def test_get_file_data(self, mock_file, mock_is_file, mock_exists):
+    def test_get_file_data(self, mock_file, mock_is_file, mock_exists):  # noqa: ARG002
         """get_file_data returns filename and file object."""
         mock_exists.return_value = True
         mock_is_file.return_value = True

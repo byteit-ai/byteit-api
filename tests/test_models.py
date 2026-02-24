@@ -1,11 +1,10 @@
 """Tests for model classes."""
 
 from datetime import datetime
-import pytest
 
+from byteit.models.DocumentMetadata import DocumentMetadata
 from byteit.models.Job import Job
 from byteit.models.JobList import JobList
-from byteit.models.DocumentMetadata import DocumentMetadata
 from byteit.models.ProcessingOptions import ProcessingOptions
 
 
@@ -113,7 +112,9 @@ class TestDocumentMetadata:
 
     def test_metadata_defaults(self):
         """DocumentMetadata uses correct defaults."""
-        metadata = DocumentMetadata(original_filename="doc.pdf", document_type="pdf")
+        metadata = DocumentMetadata(
+            original_filename="doc.pdf", document_type="pdf"
+        )
 
         assert metadata.language == "en"
         assert metadata.encoding == "utf-8"

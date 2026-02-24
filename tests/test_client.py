@@ -1,20 +1,20 @@
 """Tests for ByteITClient."""
 
-import json
 from pathlib import Path
-from unittest.mock import Mock, MagicMock, patch, mock_open
+from unittest.mock import Mock, patch
+
 import pytest
 import requests
 
 from byteit import ByteITClient
-from byteit.connectors import LocalFileInputConnector, S3InputConnector
+from byteit.connectors import LocalFileInputConnector
 from byteit.exceptions import (
     APIKeyError,
     AuthenticationError,
-    ValidationError,
-    ResourceNotFoundError,
     JobProcessingError,
+    ResourceNotFoundError,
     ServerError,
+    ValidationError,
 )
 from byteit.models.Job import Job
 
@@ -31,12 +31,16 @@ class TestByteITClientInit:
 
     def test_init_with_empty_key(self):
         """Empty API key raises APIKeyError."""
-        with pytest.raises(APIKeyError, match="API key must be a non-empty string"):
+        with pytest.raises(
+            APIKeyError, match="API key must be a non-empty string"
+        ):
             ByteITClient(api_key="")
 
     def test_init_without_key(self):
         """Missing API key raises APIKeyError."""
-        with pytest.raises(APIKeyError, match="API key must be a non-empty string"):
+        with pytest.raises(
+            APIKeyError, match="API key must be a non-empty string"
+        ):
             ByteITClient(api_key=None)
 
 
@@ -47,18 +51,22 @@ class TestInputConnectorConversion:
         """String path converts to LocalFileInputConnector."""
         client = ByteITClient("test_key")
 
-        with patch("byteit.ByteITClient.LocalFileInputConnector") as mock_connector:
+        with patch(
+            "byteit.ByteITClient.LocalFileInputConnector"
+        ) as mock_connector:
             mock_connector.return_value = Mock()
-            result = client._to_input_connector("test.pdf")
+            result = client._to_input_connector("test.pdf")  # noqa: F841
             mock_connector.assert_called_once_with(file_path="test.pdf")
 
     def test_path_object_conversion(self):
         """Path object converts to LocalFileInputConnector."""
         client = ByteITClient("test_key")
 
-        with patch("byteit.ByteITClient.LocalFileInputConnector") as mock_connector:
+        with patch(
+            "byteit.ByteITClient.LocalFileInputConnector"
+        ) as mock_connector:
             mock_connector.return_value = Mock()
-            result = client._to_input_connector(Path("test.pdf"))
+            result = client._to_input_connector(Path("test.pdf"))  # noqa: F841
             mock_connector.assert_called_once_with(file_path="test.pdf")
 
     def test_connector_passthrough(self):
@@ -283,7 +291,10 @@ class TestWaitForCompletion:
     @patch.object(ByteITClient, "_get_job_status")
     @patch("time.sleep")
     def test_wait_adaptive_polling_formula(
-        self, mock_sleep, mock_get_status, mock_tracker
+        self,
+        mock_sleep,
+        mock_get_status,
+        mock_tracker,  # noqa: ARG002
     ):
         """Polling intervals follow MIN(1*1.5^(x-1), 10) formula."""
         client = ByteITClient("test_key")
@@ -322,7 +333,12 @@ class TestParse:
     @patch.object(ByteITClient, "_to_input_connector")
     @patch.object(ByteITClient, "_to_output_connector")
     def test_parse_returns_bytes(
-        self, mock_to_output, mock_to_input, mock_create, mock_wait, mock_download
+        self,
+        mock_to_output,
+        mock_to_input,
+        mock_create,
+        mock_wait,
+        mock_download,
     ):
         """Parse returns result bytes."""
         client = ByteITClient("test_key")
@@ -342,7 +358,9 @@ class TestParse:
         assert result == b"parsed content"
         mock_to_input.assert_called_once_with("test.pdf")
         mock_create.assert_called_once()
-        mock_wait.assert_called_once_with("job_123", input_connector=mock_connector)
+        mock_wait.assert_called_once_with(
+            "job_123", input_connector=mock_connector
+        )
         mock_download.assert_called_once_with("job_123")
 
     @patch.object(ByteITClient, "_try_display_result")
@@ -352,7 +370,13 @@ class TestParse:
     @patch.object(ByteITClient, "_to_input_connector")
     @patch.object(ByteITClient, "_to_output_connector")
     def test_parse_calls_display_when_no_output(
-        self, mock_to_output, mock_to_input, mock_create, mock_wait, mock_download, mock_display
+        self,
+        mock_to_output,
+        mock_to_input,
+        mock_create,
+        mock_wait,  # noqa: ARG002
+        mock_download,
+        mock_display,
     ):
         """Parse calls display when output is None."""
         client = ByteITClient("test_key")
@@ -404,7 +428,9 @@ class TestParse:
 
         assert result == b"parsed content"
         mock_write.assert_called_once_with(b"parsed content")
-        mock_wait.assert_called_once_with("job_123", input_connector=mock_connector)
+        mock_wait.assert_called_once_with(
+            "job_123", input_connector=mock_connector
+        )
 
 
 class TestContextManager:
@@ -423,7 +449,7 @@ class TestContextManager:
         with client:
             pass
         # Session should be closed after context exit
-        # Note: We can't directly check if session is closed without internal access
+        # Note: We can't directly check if session is closed without internal access  # noqa: E501
 
 
 class TestGetJobs:
@@ -475,55 +501,55 @@ class TestDisplayResult:
     def test_display_json_in_notebook(self):
         """Display JSON when IPython is available."""
         client = ByteITClient("test_key")
-        
-        with patch("IPython.display.display") as mock_display:
+
+        with patch("IPython.display.display") as mock_display:  # noqa: SIM117
             with patch("IPython.display.JSON") as mock_json:
                 json_data = b'{"key": "value"}'
                 client._try_display_result(json_data, "json")
-                
+
                 mock_json.assert_called_once()
                 mock_display.assert_called_once()
 
     def test_display_markdown_in_notebook(self):
         """Display Markdown when IPython is available."""
         client = ByteITClient("test_key")
-        
-        with patch("IPython.display.display") as mock_display:
+
+        with patch("IPython.display.display") as mock_display:  # noqa: SIM117
             with patch("IPython.display.Markdown") as mock_md:
                 md_data = b"# Header"
                 client._try_display_result(md_data, "md")
-                
+
                 mock_md.assert_called_once()
                 mock_display.assert_called_once()
 
     def test_display_html_in_notebook(self):
         """Display HTML when IPython is available."""
         client = ByteITClient("test_key")
-        
-        with patch("IPython.display.display") as mock_display:
+
+        with patch("IPython.display.display") as mock_display:  # noqa: SIM117
             with patch("IPython.display.HTML") as mock_html:
                 html_data = b"<h1>Header</h1>"
                 client._try_display_result(html_data, "html")
-                
+
                 mock_html.assert_called_once()
                 mock_display.assert_called_once()
 
     def test_display_text_in_notebook(self):
         """Display text with code block when IPython is available."""
         client = ByteITClient("test_key")
-        
-        with patch("IPython.display.display") as mock_display:
+
+        with patch("IPython.display.display") as mock_display:  # noqa: SIM117
             with patch("IPython.display.Markdown") as mock_md:
                 text_data = b"Plain text"
                 client._try_display_result(text_data, "txt")
-                
+
                 mock_md.assert_called_once()
                 mock_display.assert_called_once()
 
     def test_display_handles_import_error(self):
         """Gracefully handle when IPython is not available."""
         client = ByteITClient("test_key")
-        
+
         # Should not raise an error even when IPython is not available
         with patch("builtins.__import__", side_effect=ImportError):
             client._try_display_result(b"test", "txt")  # Should not raise

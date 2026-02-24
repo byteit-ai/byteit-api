@@ -15,7 +15,7 @@ class ByteITError(Exception):
         response: Full API response data if available
     """
 
-    def __init__(
+    def __init__(  # noqa: D107
         self,
         message: str,
         status_code: int | None = None,

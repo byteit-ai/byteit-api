@@ -1,13 +1,12 @@
-"""AWS S3 output connector for ByteIT."""
+"""AWS S3 output connector for ByteIT."""  # noqa: N999
 
-from typing import Any, Dict
+from typing import Any
 
 from .base import OutputConnector
 
 
 class S3OutputConnector(OutputConnector):
-    """
-    Output connector for Amazon S3 using IAM role authentication.
+    """Output connector for Amazon S3 using IAM role authentication.
 
     This connector instructs the ByteIT server to save processed results
     directly to your S3 bucket. The result does NOT pass through your local machine.
@@ -19,33 +18,31 @@ class S3OutputConnector(OutputConnector):
     Note:
         The ByteIT server will use the IAM role configured in your AWS connection
         to write to the S3 bucket. No AWS credentials are needed in your client code.
-    """
+    """  # noqa: E501
 
     def __init__(
         self,
         bucket: str,
         path: str = "",
     ):
-        """
-        Initialize S3 output connector.
+        """Initialize S3 output connector.
 
         Args:
             bucket: S3 bucket name where results will be saved
             path: path prefix within the bucket (e.g., "results/" or "processed/2024/").
-        """
+        """  # noqa: E501
         self.bucket = bucket
         self.path = (
             path.rstrip("/") + "/" if path and not path.endswith("/") else path
         )
 
-    def to_dict(self) -> Dict[str, Any]:
-        """
-        Serialize connector configuration for the API.
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize connector configuration for the API.
 
         Returns:
             Dictionary with connector type and configuration matching API format:
             {"type": "s3", "bucket": "bucket-name", "path": "output/path/"}
-        """
+        """  # noqa: E501
         return {
             "type": "s3",
             "bucket": self.bucket,

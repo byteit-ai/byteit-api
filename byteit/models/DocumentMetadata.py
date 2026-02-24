@@ -1,7 +1,6 @@
 """Data model for ByteIT Document Metadatata."""
 
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
@@ -20,6 +19,6 @@ class DocumentMetadata:
 
     original_filename: str
     document_type: str
-    page_count: Optional[int] = None
+    page_count: int | None = None
     language: str = "en"
     encoding: str = "utf-8"

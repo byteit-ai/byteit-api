@@ -5,11 +5,10 @@ They are skipped by default - use pytest -m integration to run them.
 """
 
 import os
-import pytest
-from pathlib import Path
-from byteit import ByteITClient
-from byteit.connectors import LocalFileInputConnector
 
+import pytest
+
+from byteit import ByteITClient
 
 # Skip integration tests by default
 pytestmark = pytest.mark.integration
@@ -81,7 +80,7 @@ class TestIntegrationJobs:
     def test_get_job_by_id(self, client, sample_file):
         """Get specific job by ID."""
         # Create a job first
-        result = client.parse(str(sample_file))
+        result = client.parse(str(sample_file))  # noqa: F841
 
         # Get all jobs and find the one we just created
         jobs = client.get_all_jobs()

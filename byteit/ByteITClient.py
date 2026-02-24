@@ -1,19 +1,18 @@
-"""Simplified ByteIT API client - clean and minimal."""
+"""Simplified ByteIT API client - clean and minimal."""  # noqa: N999
 
 import json
 import time
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Dict, List, Optional, Type, Union
+from typing import Any
 
 import requests
 
-
 from .connectors import (
-    LocalFileOutputConnector,
     InputConnector,
-    OutputConnector,
     LocalFileInputConnector,
+    LocalFileOutputConnector,
+    OutputConnector,
 )
 from .exceptions import (
     APIKeyError,
@@ -36,8 +35,7 @@ JOBS_PATH = "jobs"
 
 
 class ByteITClient:
-    """
-    Simple client for ByteIT document parsing.
+    """Simple client for ByteIT document parsing.
 
     Methods:
         - parse(): Parse a document and get the result
@@ -57,8 +55,7 @@ class ByteITClient:
     DEFAULT_TIMEOUT = 60 * 30  # 30 minutes
 
     def __init__(self, api_key: str):
-        """
-        Initialize the ByteIT client.
+        """Initialize the ByteIT client.
 
         Args:
             api_key: Your ByteIT API key
@@ -77,12 +74,11 @@ class ByteITClient:
 
     def parse(
         self,
-        input: Union[str, Path, InputConnector],
-        output: Union[None, str, Path] = None,
+        input: str | Path | InputConnector,
+        output: None | str | Path = None,
         result_format: str = "md",
     ) -> bytes:
-        """
-        Parse a document and wait for the result.
+        """Parse a document and wait for the result.
 
         Args:
             input: File to parse. Can be:
@@ -139,9 +135,8 @@ class ByteITClient:
 
         return result_bytes
 
-    def get_all_jobs(self) -> List[Job]:
-        """
-        Get all jobs for your account.
+    def get_all_jobs(self) -> list[Job]:
+        """Get all jobs for your account.
 
         Returns:
             List of Job objects
@@ -155,8 +150,7 @@ class ByteITClient:
         return job_list.jobs
 
     def get_job_by_id(self, job_id: str) -> Job:
-        """
-        Get a specific job by ID.
+        """Get a specific job by ID.
 
         Args:
             job_id: The job ID
@@ -170,8 +164,7 @@ class ByteITClient:
         return self._get_job_status(job_id)
 
     def get_result(self, job_id: str) -> bytes:
-        """
-        Download result for a completed job.
+        """Download result for a completed job.
 
         Args:
             job_id: The job ID
@@ -186,7 +179,9 @@ class ByteITClient:
 
     # ==================== CONNECTOR CONVERTERS ====================
 
-    def _to_input_connector(self, input: Union[str, Path, InputConnector]) -> InputConnector:
+    def _to_input_connector(
+        self, input: str | Path | InputConnector
+    ) -> InputConnector:
         """Convert various input types to InputConnector."""
         # Already a connector (checks for InputConnector or its subclasses)
         if isinstance(input, InputConnector):
@@ -194,11 +189,13 @@ class ByteITClient:
 
         # String or Path - local file
         if not isinstance(input, (str, Path)):
-            raise ValidationError(f"Unsupported input type: {type(input).__name__}")
-        
+            raise ValidationError(
+                f"Unsupported input type: {type(input).__name__}"
+            )
+
         return LocalFileInputConnector(file_path=str(input))
 
-    def _to_output_connector(self, output: Union[None, str, Path]):
+    def _to_output_connector(self, output: None | str | Path):  # noqa: ARG002
         """Convert output specification to OutputConnector."""
         # Always use ByteIT storage (simplest approach)
         # If output is a file path, we download and save after completion
@@ -213,10 +210,12 @@ class ByteITClient:
         result_format: str,
     ) -> Job:
         """Create a processing job."""
-        connector_type = input_connector.to_dict().get("type", "localfile").strip().lower()
+        connector_type = (
+            input_connector.to_dict().get("type", "localfile").strip().lower()
+        )
 
         # Build base request data
-        data: Dict[str, Any] = {
+        data: dict[str, Any] = {
             "output_format": result_format,
             "processing_options": json.dumps({}),
             "input_connector": connector_type,
@@ -230,7 +229,7 @@ class ByteITClient:
         )
 
         # Prepare input based on type
-        files: Optional[Dict[str, Any]] = None
+        files: dict[str, Any] | None = None
         file_obj = None
 
         if connector_type == "localfile":
@@ -240,11 +239,15 @@ class ByteITClient:
             _, connection_data = input_connector.get_file_data()
             data["input_connection_data"] = json.dumps(connection_data)
         else:
-            raise ValidationError(f"Unsupported connector type: {connector_type}")
+            raise ValidationError(
+                f"Unsupported connector type: {connector_type}"
+            )
 
         # Make request with cleanup
         try:
-            response = self._request("POST", f"{API_BASE}/{JOBS_PATH}/", files=files, data=data)
+            response = self._request(
+                "POST", f"{API_BASE}/{JOBS_PATH}/", files=files, data=data
+            )
         finally:
             if file_obj and hasattr(file_obj, "close") and not file_obj.closed:
                 file_obj.close()
@@ -273,9 +276,9 @@ class ByteITClient:
         )
 
     def _wait_for_completion(
-        self, job_id: str, input_connector: Optional[InputConnector] = None
+        self, job_id: str, input_connector: InputConnector | None = None
     ) -> Job:
-        """Wait for job to complete with adaptive polling: MIN(1*1.5^(x-1), 10)."""
+        """Wait for job to complete with adaptive polling: MIN(1*1.5^(x-1), 10)."""  # noqa: E501
         tracker = ProgressTracker(input_connector)
         iteration = 1
 
@@ -289,7 +292,9 @@ class ByteITClient:
 
             if job.is_failed:
                 tracker.close()
-                raise JobProcessingError(f"Job failed: {job.processing_error or 'Unknown error'}")
+                raise JobProcessingError(
+                    f"Job failed: {job.processing_error or 'Unknown error'}"
+                )
 
             poll_interval = min(1 * (1.5 ** (iteration - 1)), 10)
             time.sleep(poll_interval)
@@ -313,7 +318,9 @@ class ByteITClient:
             data = self._handle_response(response)
             if not data.get("ready", False):
                 status = data.get("processing_status", "unknown")
-                raise JobProcessingError(f"Result not available. Job status: {status}")
+                raise JobProcessingError(
+                    f"Result not available. Job status: {status}"
+                )
             raise JobProcessingError("Job ready but no result file returned")
 
         # File response
@@ -325,14 +332,14 @@ class ByteITClient:
         """Build full URL."""
         return f"{self.BASE_URL}/{path.lstrip('/')}"
 
-    def _request(self, method: str, path: str, **kwargs: Any) -> Dict[str, Any]:
+    def _request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
         """Make HTTP request."""
         url = self._build_url(path)
         kwargs.setdefault("timeout", self.DEFAULT_TIMEOUT)
         response = self._session.request(method, url, **kwargs)
         return self._handle_response(response)
 
-    def _handle_response(self, response: requests.Response) -> Dict[str, Any]:
+    def _handle_response(self, response: requests.Response) -> dict[str, Any]:
         """Handle API response and raise appropriate exceptions."""
         # Success path
         if response.status_code in (200, 201):
@@ -340,15 +347,20 @@ class ByteITClient:
 
         # Error path - extract details
         try:
-            data: Dict[str, Any] = response.json() if response.content else {}
-            message: str = data.get("detail", "") or response.text or "Request failed"
+            data: dict[str, Any] = response.json() if response.content else {}
+            message: str = (
+                data.get("detail", "") or response.text or "Request failed"
+            )
         except (ValueError, requests.exceptions.JSONDecodeError):
             # Response is not JSON (e.g., HTML error page)
             data = {}
-            message = response.text or f"Request failed with status {response.status_code}"
+            message = (
+                response.text
+                or f"Request failed with status {response.status_code}"
+            )
 
         # Map status to exception
-        ERROR_MAP: Dict[int, Type[Exception]] = {
+        ERROR_MAP: dict[int, type[Exception]] = {  # noqa: N806
             400: ValidationError,
             401: AuthenticationError,
             403: APIKeyError,
@@ -356,7 +368,7 @@ class ByteITClient:
             429: RateLimitError,
         }
 
-        ExceptionClass = ERROR_MAP.get(response.status_code)
+        ExceptionClass = ERROR_MAP.get(response.status_code)  # noqa: N806
         if ExceptionClass:
             raise ExceptionClass(message, response.status_code, data)
 
@@ -365,24 +377,27 @@ class ByteITClient:
 
         raise ByteITError(message, response.status_code, data)
 
-    def _try_display_result(self, result_bytes: bytes, result_format: str) -> None:
+    def _try_display_result(
+        self, result_bytes: bytes, result_format: str
+    ) -> None:
         """Try to display result in notebook environment."""
         try:
             # Check if we're in a notebook environment
-            from IPython.display import display, JSON, Markdown, HTML
-            
-            content = result_bytes.decode('utf-8', errors='replace')
-            
-            if result_format == 'json':
+            from IPython.display import HTML, JSON, Markdown, display
+
+            content = result_bytes.decode("utf-8", errors="replace")
+
+            if result_format == "json":
                 import json
+
                 try:
                     data = json.loads(content)
                     display(JSON(data, expanded=True))
                 except json.JSONDecodeError:
                     display(Markdown(f"```json\n{content}\n```"))
-            elif result_format == 'md':
+            elif result_format == "md":
                 display(Markdown(content))
-            elif result_format == 'html':
+            elif result_format == "html":
                 display(HTML(content))
             else:  # txt or unknown
                 display(Markdown(f"```\n{content}\n```"))
@@ -402,9 +417,9 @@ class ByteITClient:
 
     def __exit__(
         self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> None:
         """Context manager exit."""
         self.close()

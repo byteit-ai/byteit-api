@@ -1,7 +1,7 @@
 """Base classes for ByteIT connectors."""
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Tuple
+from typing import Any
 
 
 class InputConnector(ABC):
@@ -16,9 +16,8 @@ class InputConnector(ABC):
     """
 
     @abstractmethod
-    def get_file_data(self) -> Tuple[str, Any]:
-        """
-        Get file data for upload.
+    def get_file_data(self) -> tuple[str, Any]:
+        """Get file data for upload.
 
         Returns:
             Tuple of (filename, file_object) suitable for requests.files
@@ -26,9 +25,8 @@ class InputConnector(ABC):
         ...
 
     @abstractmethod
-    def to_dict(self) -> Dict[str, Any]:
-        """
-        Convert connector configuration to dictionary for API submission.
+    def to_dict(self) -> dict[str, Any]:
+        """Convert connector configuration to dictionary for API submission.
 
         Returns:
             Dictionary representation of the connector configuration
@@ -47,9 +45,8 @@ class OutputConnector(ABC):
     """
 
     @abstractmethod
-    def to_dict(self) -> Dict[str, Any]:
-        """
-        Convert connector configuration to dictionary for API submission.
+    def to_dict(self) -> dict[str, Any]:
+        """Convert connector configuration to dictionary for API submission.
 
         Returns:
             Dictionary representation of the connector configuration

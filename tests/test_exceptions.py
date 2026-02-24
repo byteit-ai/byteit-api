@@ -1,16 +1,15 @@
 """Tests for exception classes."""
 
-import pytest
 from byteit.exceptions import (
-    ByteITError,
-    AuthenticationError,
     APIKeyError,
-    ValidationError,
-    ResourceNotFoundError,
-    RateLimitError,
-    ServerError,
-    NetworkError,
+    AuthenticationError,
+    ByteITError,
     JobProcessingError,
+    NetworkError,
+    RateLimitError,
+    ResourceNotFoundError,
+    ServerError,
+    ValidationError,
 )
 
 

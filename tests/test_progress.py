@@ -9,22 +9,22 @@ from byteit.progress import ProgressTracker
 class FakeBar:
     """Simple progress bar stub for tests."""
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs):  # noqa: ARG002, D107
         self.description = None
         self.total_updates = 0.0
         self.closed = False
 
-    def set_description(self, desc: str) -> None:
+    def set_description(self, desc: str) -> None:  # noqa: D102
         self.description = desc
 
-    def update(self, n: float) -> None:
+    def update(self, n: float) -> None:  # noqa: D102
         self.total_updates += n
 
-    def close(self) -> None:
+    def close(self) -> None:  # noqa: D102
         self.closed = True
 
 
-def test_progress_message_ranges():
+def test_progress_message_ranges():  # noqa: D103
     tracker = ProgressTracker(progress_bar_factory=FakeBar)
 
     assert tracker._progress_message(0) == "Upload"
@@ -37,10 +37,10 @@ def test_progress_message_ranges():
     assert tracker._progress_message(90) == "Validation"
 
 
-def test_estimate_times_for_extensions(monkeypatch):
+def test_estimate_times_for_extensions(monkeypatch):  # noqa: D103
     tracker = ProgressTracker(progress_bar_factory=FakeBar)
 
-    monkeypatch.setattr(random, "gauss", lambda mean, sigma: mean)
+    monkeypatch.setattr(random, "gauss", lambda mean, sigma: mean)  # noqa: ARG005
     monkeypatch.setattr(random, "uniform", lambda a, b: (a + b) / 2)
 
     assert tracker._estimate_processing_seconds("docx", None) == 6.0
@@ -49,13 +49,15 @@ def test_estimate_times_for_extensions(monkeypatch):
     assert tracker._estimate_processing_seconds("txt", None) == 3.0
 
 
-def test_update_advances_progress_with_time():
+def test_update_advances_progress_with_time():  # noqa: D103
     time_values = [0.0]
 
     def fake_time():
         return time_values[0]
 
-    tracker = ProgressTracker(progress_bar_factory=FakeBar, time_provider=fake_time)
+    tracker = ProgressTracker(
+        progress_bar_factory=FakeBar, time_provider=fake_time
+    )
     tracker._state.estimated_seconds = 10.0
 
     job = SimpleNamespace(metadata=None)
@@ -73,7 +75,7 @@ def test_update_advances_progress_with_time():
     assert tracker._bar.total_updates == 45.0
 
 
-def test_finalize_completes_bar():
+def test_finalize_completes_bar():  # noqa: D103
     tracker = ProgressTracker(progress_bar_factory=FakeBar)
     tracker._state.last_progress = 90.0
 
@@ -90,12 +92,10 @@ def test_page_count_updates_pdf_estimate():
     tracker._input_extension = "pdf"
     tracker._state.estimated_seconds = 10.0
 
-    job_with_pages = SimpleNamespace(
-        metadata=SimpleNamespace(page_count=5)
-    )
-    
+    job_with_pages = SimpleNamespace(metadata=SimpleNamespace(page_count=5))
+
     tracker.update(job_with_pages)
-    
+
     assert tracker._state.known_pages == 5
     assert tracker._state.estimated_seconds > 10.0  # Should be recalculated
 
@@ -107,7 +107,9 @@ def test_progress_does_not_exceed_90_during_processing():
     def fake_time():
         return time_values[0]
 
-    tracker = ProgressTracker(progress_bar_factory=FakeBar, time_provider=fake_time)
+    tracker = ProgressTracker(
+        progress_bar_factory=FakeBar, time_provider=fake_time
+    )
     tracker._state.estimated_seconds = 10.0
 
     job = SimpleNamespace(metadata=None)

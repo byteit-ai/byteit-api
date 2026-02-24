@@ -1,12 +1,12 @@
 """Processing options model for document processing."""
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Union
+from typing import Any
 
 from byteit.models.OutputFormat import OutputFormat
 
 
-def _default_list() -> List[str]:
+def _default_list() -> list[str]:
     """Factory function for default list."""
     return ["en"]
 
@@ -27,9 +27,9 @@ class ProcessingOptions:
         while languages and page_range are sent as processing_options.
     """
 
-    languages: List[str] = field(default_factory=_default_list)
+    languages: list[str] = field(default_factory=_default_list)
     page_range: str = field(default="")
-    output_format: Union[OutputFormat, str] = OutputFormat.TXT
+    output_format: OutputFormat | str = OutputFormat.TXT
 
     def __post_init__(self) -> None:
         """Validate and convert processing options."""
@@ -45,9 +45,8 @@ class ProcessingOptions:
                     f"Valid formats are: txt, json, html, md"
                 ) from exc
 
-    def to_dict(self) -> Dict[str, Any]:
-        """
-        Convert ProcessingOptions to dictionary for API communication.
+    def to_dict(self) -> dict[str, Any]:
+        """Convert ProcessingOptions to dictionary for API communication.
 
         Note: output_format is included here but will be extracted by the
         API client and sent as a top-level parameter.
@@ -55,7 +54,7 @@ class ProcessingOptions:
         Returns:
             Dictionary representation suitable for API requests
         """
-        result: Dict[str, Any] = {}
+        result: dict[str, Any] = {}
 
         if self.languages:
             result["languages"] = self.languages
@@ -72,9 +71,8 @@ class ProcessingOptions:
         return result
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ProcessingOptions":
-        """
-        Create ProcessingOptions from dictionary.
+    def from_dict(cls, data: dict[str, Any]) -> "ProcessingOptions":
+        """Create ProcessingOptions from dictionary.
 
         Args:
             data: Dictionary containing processing options
