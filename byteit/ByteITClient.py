@@ -51,8 +51,8 @@ class ByteITClient:
     """
 
     # BASE_URL = "https://api.byteit.ai"
-    BASE_URL = "http://127.0.0.1:8000"
-    # BASE_URL = "https://byteit.ai"
+    # BASE_URL = "http://127.0.0.1:8000"
+    BASE_URL = "https://byteit.ai"
     DEFAULT_TIMEOUT = 60 * 30  # 30 minutes
 
     def __init__(self, api_key: str):
