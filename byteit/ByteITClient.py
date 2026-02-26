@@ -77,7 +77,7 @@ class ByteITClient:
         self,
         input: str | Path | InputConnector,
         output: None | str | Path = None,
-        processing_options: ProcessingOptions | None = None,
+        processing_options: ProcessingOptions | dict | None = None,
         result_format: str = "md",
     ) -> bytes:
         """Parse a document and wait for the result.
@@ -113,6 +113,10 @@ class ByteITClient:
             json_result = client.parse("doc.pdf", result_format="json")
         """
         print("Starting document parsing...")
+        # Coerce dict to ProcessingOptions if needed
+        if isinstance(processing_options, dict):
+            processing_options = ProcessingOptions.from_dict(processing_options)
+
         # Convert input to connector as early as possible
         input_connector = self._to_input_connector(input)
 
