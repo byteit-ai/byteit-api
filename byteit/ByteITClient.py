@@ -26,6 +26,7 @@ from .exceptions import (
 )
 from .models.Job import Job
 from .models.JobList import JobList
+from .models.ProcessingOptions import ProcessingOptions
 from .progress import ProgressTracker
 
 # API configuration
@@ -76,6 +77,7 @@ class ByteITClient:
         self,
         input: str | Path | InputConnector,
         output: None | str | Path = None,
+        processing_options: ProcessingOptions | dict | None = None,
         result_format: str = "md",
     ) -> bytes:
         """Parse a document and wait for the result.
@@ -85,6 +87,10 @@ class ByteITClient:
                 - str or Path: Local file path
                 - InputConnector: For S3 or custom sources
             result_format: "txt", "json", "md", or "html" (default: "txt")
+            processing_options: Optional ProcessingOptions object with fields:
+                - languages: List of languages to detect/process,
+                e.g. ["en", "de"]
+                - page_range: Page range to process, e.g. "1-5" or "all"
             output: Where to save result (optional). Can be:
                 - None: Return result as bytes (default)
                 - str or Path: Save to local file
@@ -107,6 +113,10 @@ class ByteITClient:
             json_result = client.parse("doc.pdf", result_format="json")
         """
         print("Starting document parsing...")
+        # Coerce dict to ProcessingOptions if needed
+        if isinstance(processing_options, dict):
+            processing_options = ProcessingOptions.from_dict(processing_options)
+
         # Convert input to connector as early as possible
         input_connector = self._to_input_connector(input)
 
@@ -117,6 +127,7 @@ class ByteITClient:
         job = self._create_job(
             input_connector=input_connector,
             output_connector=output_connector,
+            processing_options=processing_options,
             result_format=result_format,
         )
         print(f"Job {job.id} created. Waiting for completion...")
@@ -208,6 +219,7 @@ class ByteITClient:
         input_connector: InputConnector,
         output_connector: OutputConnector,
         result_format: str,
+        processing_options: ProcessingOptions | None = None,
     ) -> Job:
         """Create a processing job."""
         connector_type = (
@@ -217,7 +229,9 @@ class ByteITClient:
         # Build base request data
         data: dict[str, Any] = {
             "output_format": result_format,
-            "processing_options": json.dumps({}),
+            "processing_options": json.dumps(
+                processing_options.to_dict() if processing_options else {}
+            ),
             "input_connector": connector_type,
         }
 
