@@ -6,7 +6,9 @@ name: Jira Guard
 
 on:
   pull_request:
-    types: [opened, edited, reopened, synchronize]
+    types: [opened, edited, reopened, synchronize, closed]
+  pull_request_review:
+    types: [submitted]
 
 jobs:
   jira-guard:
