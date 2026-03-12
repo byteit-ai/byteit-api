@@ -350,9 +350,7 @@ class TestParse:
         result = client.parse("test.pdf")
 
         assert result == b"parsed content"
-        mock_submit.assert_called_once_with(
-            "test.pdf", None, "md", None
-        )
+        mock_submit.assert_called_once_with("test.pdf", None, "md", None)
         mock_wait.assert_called_once_with(
             "job_123", input_connector=mock_connector
         )
@@ -450,18 +448,17 @@ class TestParseAsync:
 
     @patch.object(ByteITClient, "_submit_job")
     def test_parse_async_does_not_wait(self, mock_submit):
-        """parse_async does not call _wait_for_completion or _download_result."""
+        """parse_async doesn't call _wait_for_completion or _download_result."""
         client = ByteITClient("test_key")
 
         mock_job = Mock(spec=Job)
         mock_job.id = "job_789"
         mock_submit.return_value = (mock_job, Mock())
 
-        with patch.object(
-            client, "_wait_for_completion"
-        ) as mock_wait, patch.object(
-            client, "_download_result"
-        ) as mock_download:
+        with (
+            patch.object(client, "_wait_for_completion") as mock_wait,
+            patch.object(client, "_download_result") as mock_download,
+        ):
             client.parse_async("test.pdf")
             mock_wait.assert_not_called()
             mock_download.assert_not_called()
@@ -512,9 +509,7 @@ class TestSubmitJob:
         mock_to_output.return_value = Mock()
         mock_create.return_value = Mock(spec=Job)
 
-        client._submit_job(
-            "test.pdf", {"languages": ["de"]}, "json"
-        )
+        client._submit_job("test.pdf", {"languages": ["de"]}, "json")
 
         call_kwargs = mock_create.call_args[1]
         from byteit.models.ProcessingOptions import ProcessingOptions
@@ -656,5 +651,7 @@ class TestDisplayResult:
         """Gracefully skip display when IPython is not available."""
         client = ByteITClient("test_key")
         # Remove IPython from sys.modules to simulate it not being installed
-        with patch.dict(sys.modules, {"IPython": None, "IPython.display": None}):
+        with patch.dict(
+            sys.modules, {"IPython": None, "IPython.display": None}
+        ):
             client._try_display_result(b"test", "txt")  # must not raise

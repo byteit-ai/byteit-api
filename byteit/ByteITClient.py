@@ -42,7 +42,7 @@ class ByteITClient:
 
     Methods:
         parse(input, ...):           Parse a document and wait for the result.
-        parse_async(input, ...):     Submit a document for parsing, return immediately.
+        parse_async(input, ...):     Submit a document for parsing, return.
         get_job_status(job_id):      Check the processing status of a job.
         get_job_result(job_id):      Download the result of a completed job.
         get_jobs():                  List all jobs for your account.
@@ -50,15 +50,13 @@ class ByteITClient:
     Examples:
         Synchronous (blocking)::
 
-            client = ByteITClient(api_key="your_key")
-            result = client.parse("document.pdf")
+            client = ByteITClient(api_key="your_key") result =
+            client.parse("document.pdf")
 
         Asynchronous (non-blocking)::
 
-            job = client.parse_async("document.pdf")
-            # ... do other work ...
-            status = client.get_job_status(job.id)
-            if status.is_completed:
+            job = client.parse_async("document.pdf") # ... do other work ...
+            status = client.get_job_status(job.id) if status.is_completed:
                 result = client.get_job_result(job.id)
     """
 
@@ -98,7 +96,7 @@ class ByteITClient:
         the parsed content. For non-blocking usage, see :meth:`parse_async`.
 
         Args:
-            input: File path (str/Path) or InputConnector (e.g. S3InputConnector).
+            input: File path (str/Path) or InputConnector.
             output: Optional file path to save the result to disk.
             processing_options: ProcessingOptions or dict with keys:
                 ``languages`` (list[str]), ``page_range`` (str).
@@ -143,7 +141,7 @@ class ByteITClient:
         :meth:`get_job_status` and retrieve results with :meth:`get_job_result`.
 
         Args:
-            input: File path (str/Path) or InputConnector (e.g. S3InputConnector).
+            input: File path (str/Path) or InputConnector.
             processing_options: ProcessingOptions or dict with keys:
                 ``languages`` (list[str]), ``page_range`` (str).
             result_format: Output format: ``"txt"``, ``"json"``, ``"md"``,
