@@ -1,4 +1,4 @@
-"""Simplified ByteIT API client - clean and minimal."""  # noqa: N999
+"""ByteIT API client."""  # noqa: N999
 
 import json
 import time
@@ -36,18 +36,30 @@ JOBS_PATH = "jobs"
 
 
 class ByteITClient:
-    """Simple client for ByteIT document parsing.
+    """Client for ByteIT document parsing.
+
+    Provides both synchronous and asynchronous document parsing workflows.
 
     Methods:
-        - parse(): Parse a document and get the result
-        - get_all_jobs(): Get all your jobs
-        - get_job_by_id(): Get a specific job
-        - get_result(): Download a job result
+        parse(input, ...):           Parse a document and wait for the result.
+        parse_async(input, ...):     Submit a document for parsing, return immediately.
+        get_job_status(job_id):      Check the processing status of a job.
+        get_job_result(job_id):      Download the result of a completed job.
+        get_jobs():                  List all jobs for your account.
 
-    Example:
-        client = ByteITClient(api_key="your_key")
-        result = client.parse("document.pdf")  # Returns bytes
-        client.parse("doc.pdf", output="result.txt")  # Saves to file
+    Examples:
+        Synchronous (blocking)::
+
+            client = ByteITClient(api_key="your_key")
+            result = client.parse("document.pdf")
+
+        Asynchronous (non-blocking)::
+
+            job = client.parse_async("document.pdf")
+            # ... do other work ...
+            status = client.get_job_status(job.id)
+            if status.is_completed:
+                result = client.get_job_result(job.id)
     """
 
     # BASE_URL = "https://api.byteit.ai"
@@ -82,53 +94,28 @@ class ByteITClient:
     ) -> bytes:
         """Parse a document and wait for the result.
 
+        Submits the document, polls until processing completes, and returns
+        the parsed content. For non-blocking usage, see :meth:`parse_async`.
+
         Args:
-            input: File to parse. Can be:
-                - str or Path: Local file path
-                - InputConnector: For S3 or custom sources
-            result_format: "txt", "json", "md", or "html" (default: "txt")
-            processing_options: Optional ProcessingOptions object with fields:
-                - languages: List of languages to detect/process,
-                e.g. ["en", "de"]
-                - page_range: Page range to process, e.g. "1-5" or "all"
-            output: Where to save result (optional). Can be:
-                - None: Return result as bytes (default)
-                - str or Path: Save to local file
+            input: File path (str/Path) or InputConnector (e.g. S3InputConnector).
+            output: Optional file path to save the result to disk.
+            processing_options: ProcessingOptions or dict with keys:
+                ``languages`` (list[str]), ``page_range`` (str).
+            result_format: Output format: ``"txt"``, ``"json"``, ``"md"``,
+                or ``"html"`` (default: ``"md"``).
 
         Returns:
-            Parsed content as bytes
+            Parsed content as bytes.
 
-        Example:
-            # Simple - returns bytes
+        Example::
+
             result = client.parse("document.pdf")
-
-            # Save to file
-            client.parse("doc.pdf", output="result.txt")
-
-            # S3 input (use connector)
-            from byteit.connectors import S3InputConnector
-            result = client.parse(S3InputConnector("my-bucket", "file.pdf"))
-
-            # Different format
-            json_result = client.parse("doc.pdf", result_format="json")
+            client.parse("doc.pdf", output="result.md")
+            client.parse("doc.pdf", result_format="json")
         """
-        print("Starting document parsing...")
-        # Coerce dict to ProcessingOptions if needed
-        if isinstance(processing_options, dict):
-            processing_options = ProcessingOptions.from_dict(processing_options)
-
-        # Convert input to connector as early as possible
-        input_connector = self._to_input_connector(input)
-
-        # Convert output to connector if provided
-        output_connector = self._to_output_connector(output)
-
-        # Create job and wait
-        job = self._create_job(
-            input_connector=input_connector,
-            output_connector=output_connector,
-            processing_options=processing_options,
-            result_format=result_format,
+        job, input_connector = self._submit_job(
+            input, processing_options, result_format, output
         )
         print(f"Job {job.id} created. Waiting for completion...")
         self._wait_for_completion(job.id, input_connector=input_connector)
@@ -138,55 +125,122 @@ class ByteITClient:
 
         # If output is a file path, save it
         if isinstance(output, (str, Path)):
-            output_path = Path(output)
-            output_path.write_bytes(result_bytes)
+            Path(output).write_bytes(result_bytes)
         elif output is None:
-            # Try to display in notebook if available
             self._try_display_result(result_bytes, result_format)
 
         return result_bytes
 
-    def get_all_jobs(self) -> list[Job]:
-        """Get all jobs for your account.
+    def parse_async(
+        self,
+        input: str | Path | InputConnector,
+        processing_options: ProcessingOptions | dict | None = None,
+        result_format: str = "md",
+    ) -> Job:
+        """Submit a document for parsing and return immediately.
+
+        Use this for non-blocking workflows. Check progress with
+        :meth:`get_job_status` and retrieve results with :meth:`get_job_result`.
+
+        Args:
+            input: File path (str/Path) or InputConnector (e.g. S3InputConnector).
+            processing_options: ProcessingOptions or dict with keys:
+                ``languages`` (list[str]), ``page_range`` (str).
+            result_format: Output format: ``"txt"``, ``"json"``, ``"md"``,
+                or ``"html"`` (default: ``"md"``).
 
         Returns:
-            List of Job objects
+            Job object with ``id``, ``processing_status``, and other metadata.
 
-        Example:
-            jobs = client.get_all_jobs()
-            for job in jobs:
+        Example::
+
+            job = client.parse_async("document.pdf")
+            # ... do other work ...
+            status = client.get_job_status(job.id)
+            if status.is_completed:
+                result = client.get_job_result(job.id)
+        """
+        job, _ = self._submit_job(input, processing_options, result_format)
+        print(f"Job {job.id} submitted.")
+        return job
+
+    def get_jobs(self) -> list[Job]:
+        """List all jobs for your account.
+
+        Returns:
+            List of Job objects.
+
+        Example::
+
+            for job in client.get_jobs():
                 print(f"{job.id}: {job.processing_status}")
         """
         job_list = self._list_jobs()
         return job_list.jobs
 
-    def get_job_by_id(self, job_id: str) -> Job:
-        """Get a specific job by ID.
+    def get_job_status(self, job_id: str) -> Job:
+        """Check the processing status of a job.
 
         Args:
-            job_id: The job ID
+            job_id: The job ID.
 
         Returns:
-            Job object
+            Job object with current status and metadata.
 
-        Example:
-            job = client.get_job_by_id("job_123")
+        Example::
+
+            job = client.get_job_status("job_123")
+            if job.is_completed:
+                result = client.get_job_result(job.id)
         """
         return self._get_job_status(job_id)
 
-    def get_result(self, job_id: str) -> bytes:
-        """Download result for a completed job.
+    def get_job_result(self, job_id: str) -> bytes:
+        """Download the result of a completed job.
 
         Args:
-            job_id: The job ID
+            job_id: The job ID.
 
         Returns:
-            Result as bytes
+            Parsed content as bytes.
 
         Raises:
-            JobProcessingError: If job is not completed
+            JobProcessingError: If the job has not completed yet.
+
+        Example::
+
+            result = client.get_job_result("job_123")
+            with open("output.md", "wb") as f:
+                f.write(result)
         """
         return self._download_result(job_id)
+
+    # ==================== JOB SUBMISSION ====================
+
+    def _submit_job(
+        self,
+        input: str | Path | InputConnector,
+        processing_options: ProcessingOptions | dict | None = None,
+        result_format: str = "md",
+        output: None | str | Path = None,
+    ) -> tuple[Job, InputConnector]:
+        """Validate inputs, build connectors, and create a job.
+
+        Shared by :meth:`parse` and :meth:`parse_async`.
+        """
+        if isinstance(processing_options, dict):
+            processing_options = ProcessingOptions.from_dict(processing_options)
+
+        input_connector = self._to_input_connector(input)
+        output_connector = self._to_output_connector(output)
+
+        job = self._create_job(
+            input_connector=input_connector,
+            output_connector=output_connector,
+            processing_options=processing_options,
+            result_format=result_format,
+        )
+        return job, input_connector
 
     # ==================== CONNECTOR CONVERTERS ====================
 

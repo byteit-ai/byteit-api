@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+
+### Added
+- `parse_async()` method for non-blocking document submission.
+- `_submit_job()` internal helper to eliminate duplication between `parse()` and `parse_async()`.
+
+
 ## [0.1.2] - 2026-01-31
 
 ### Changed

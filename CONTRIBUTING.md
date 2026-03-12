@@ -48,23 +48,17 @@ pytest
 
 ## Code Style
 
-We use Black for code formatting and isort for import sorting.
+This project uses [Ruff](https://docs.astral.sh/ruff/) for linting and formatting.
 
-### Format Code
+### Format & Lint
 ```bash
-black byteit tests
-isort byteit tests
+ruff format byteit tests
+ruff check byteit tests
 ```
 
-### Check Formatting
+### Auto-fix
 ```bash
-black --check byteit tests
-isort --check-only byteit tests
-```
-
-### Type Checking
-```bash
-mypy byteit
+ruff check --fix byteit tests
 ```
 
 ## Reporting Issues
@@ -84,7 +78,7 @@ When reporting bugs, please include:
 3. Make your changes
 4. Add tests for new functionality
 5. Ensure all tests pass (`pytest`)
-6. Format code (`black byteit tests && isort byteit tests`)
+6. Format and lint code (`ruff format byteit tests && ruff check byteit tests`)
 7. Commit with clear messages (`git commit -am 'Add feature X'`)
 8. Push to your fork (`git push origin feature/your-feature`)
 9. Open a Pull Request with a clear description
