@@ -34,9 +34,7 @@ class S3OutputConnector(OutputConnector):
             path: Path prefix within the bucket (e.g., "results/").
         """
         self.bucket = bucket
-        self.path = (
-            path.rstrip("/") + "/" if path and not path.endswith("/") else path
-        )
+        self.path = path.rstrip("/") + "/" if path and not path.endswith("/") else path
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize connector configuration for the API.

@@ -32,16 +32,12 @@ class TestByteITClientInit:
 
     def test_init_with_empty_key(self):
         """Empty API key raises APIKeyError."""
-        with pytest.raises(
-            APIKeyError, match="API key must be a non-empty string"
-        ):
+        with pytest.raises(APIKeyError, match="API key must be a non-empty string"):
             ByteITClient(api_key="")
 
     def test_init_without_key(self):
         """Missing API key raises APIKeyError."""
-        with pytest.raises(
-            APIKeyError, match="API key must be a non-empty string"
-        ):
+        with pytest.raises(APIKeyError, match="API key must be a non-empty string"):
             ByteITClient(api_key=None)
 
 
@@ -52,9 +48,7 @@ class TestInputConnectorConversion:
         """String path converts to LocalFileInputConnector."""
         client = ByteITClient("test_key")
 
-        with patch(
-            "byteit.ByteITClient.LocalFileInputConnector"
-        ) as mock_connector:
+        with patch("byteit.ByteITClient.LocalFileInputConnector") as mock_connector:
             mock_connector.return_value = Mock()
             result = client._to_input_connector("test.pdf")  # noqa: F841
             mock_connector.assert_called_once_with(file_path="test.pdf")
@@ -63,9 +57,7 @@ class TestInputConnectorConversion:
         """Path object converts to LocalFileInputConnector."""
         client = ByteITClient("test_key")
 
-        with patch(
-            "byteit.ByteITClient.LocalFileInputConnector"
-        ) as mock_connector:
+        with patch("byteit.ByteITClient.LocalFileInputConnector") as mock_connector:
             mock_connector.return_value = Mock()
             result = client._to_input_connector(Path("test.pdf"))  # noqa: F841
             mock_connector.assert_called_once_with(file_path="test.pdf")
@@ -247,9 +239,7 @@ class TestWaitForCompletion:
     @patch("byteit.ByteITClient.ProgressTracker")
     @patch.object(ByteITClient, "_get_job_status")
     @patch("time.sleep")
-    def test_wait_returns_on_completion(
-        self, mock_sleep, mock_get_status, mock_tracker
-    ):
+    def test_wait_returns_on_completion(self, mock_sleep, mock_get_status, mock_tracker):
         """Polling stops when job completes."""
         client = ByteITClient("test_key")
 
@@ -351,9 +341,7 @@ class TestParse:
 
         assert result == b"parsed content"
         mock_submit.assert_called_once_with("test.pdf", None, "md", None)
-        mock_wait.assert_called_once_with(
-            "job_123", input_connector=mock_connector
-        )
+        mock_wait.assert_called_once_with("job_123", input_connector=mock_connector)
         mock_download.assert_called_once_with("job_123")
 
     @patch.object(ByteITClient, "_try_display_result")
@@ -407,9 +395,7 @@ class TestParse:
 
         assert result == b"parsed content"
         mock_write.assert_called_once_with(b"parsed content")
-        mock_wait.assert_called_once_with(
-            "job_123", input_connector=mock_connector
-        )
+        mock_wait.assert_called_once_with("job_123", input_connector=mock_connector)
 
 
 class TestParseAsync:
@@ -651,7 +637,5 @@ class TestDisplayResult:
         """Gracefully skip display when IPython is not available."""
         client = ByteITClient("test_key")
         # Remove IPython from sys.modules to simulate it not being installed
-        with patch.dict(
-            sys.modules, {"IPython": None, "IPython.display": None}
-        ):
+        with patch.dict(sys.modules, {"IPython": None, "IPython.display": None}):
             client._try_display_result(b"test", "txt")  # must not raise

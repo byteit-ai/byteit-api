@@ -242,9 +242,7 @@ class ByteITClient:
 
     # ==================== CONNECTOR CONVERTERS ====================
 
-    def _to_input_connector(
-        self, input: str | Path | InputConnector
-    ) -> InputConnector:
+    def _to_input_connector(self, input: str | Path | InputConnector) -> InputConnector:
         """Convert various input types to InputConnector."""
         # Already a connector (checks for InputConnector or its subclasses)
         if isinstance(input, InputConnector):
@@ -252,9 +250,7 @@ class ByteITClient:
 
         # String or Path - local file
         if not isinstance(input, (str, Path)):
-            raise ValidationError(
-                f"Unsupported input type: {type(input).__name__}"
-            )
+            raise ValidationError(f"Unsupported input type: {type(input).__name__}")
 
         return LocalFileInputConnector(file_path=str(input))
 
@@ -305,9 +301,7 @@ class ByteITClient:
             _, connection_data = input_connector.get_file_data()
             data["input_connection_data"] = json.dumps(connection_data)
         else:
-            raise ValidationError(
-                f"Unsupported connector type: {connector_type}"
-            )
+            raise ValidationError(f"Unsupported connector type: {connector_type}")
 
         # Make request with cleanup
         try:
@@ -344,7 +338,7 @@ class ByteITClient:
     def _wait_for_completion(
         self, job_id: str, input_connector: InputConnector | None = None
     ) -> Job:
-        """Wait for job to complete with adaptive polling: MIN(1*1.5^(x-1), 10)."""  # noqa: E501
+        """Wait for job to complete with adaptive polling: MIN(1*1.5^(x-1), 10)."""
         tracker = ProgressTracker(input_connector)
         iteration = 1
 
@@ -384,9 +378,7 @@ class ByteITClient:
             data = self._handle_response(response)
             if not data.get("ready", False):
                 status = data.get("processing_status", "unknown")
-                raise JobProcessingError(
-                    f"Result not available. Job status: {status}"
-                )
+                raise JobProcessingError(f"Result not available. Job status: {status}")
             raise JobProcessingError("Job ready but no result file returned")
 
         # File response
@@ -414,15 +406,12 @@ class ByteITClient:
         # Error path - extract details
         try:
             data: dict[str, Any] = response.json() if response.content else {}
-            message: str = (
-                data.get("detail", "") or response.text or "Request failed"
-            )
+            message: str = data.get("detail", "") or response.text or "Request failed"
         except (ValueError, requests.exceptions.JSONDecodeError):
             # Response is not JSON (e.g., HTML error page)
             data = {}
             message = (
-                response.text
-                or f"Request failed with status {response.status_code}"
+                response.text or f"Request failed with status {response.status_code}"
             )
 
         # Map status to exception
@@ -443,9 +432,7 @@ class ByteITClient:
 
         raise ByteITError(message, response.status_code, data)
 
-    def _try_display_result(
-        self, result_bytes: bytes, result_format: str
-    ) -> None:
+    def _try_display_result(self, result_bytes: bytes, result_format: str) -> None:
         """Try to display result in notebook environment."""
         try:
             # Check if we're in a notebook environment

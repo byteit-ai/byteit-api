@@ -30,9 +30,10 @@ exclude = [
     "node_modules",
     "site-packages",
     "venv",
+    "**/migrations",
 ]
 
-line-length = 80
+line-length = 90
 indent-width = 4
 
 target-version = "py312"

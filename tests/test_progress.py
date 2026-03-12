@@ -55,9 +55,7 @@ def test_update_advances_progress_with_time():  # noqa: D103
     def fake_time():
         return time_values[0]
 
-    tracker = ProgressTracker(
-        progress_bar_factory=FakeBar, time_provider=fake_time
-    )
+    tracker = ProgressTracker(progress_bar_factory=FakeBar, time_provider=fake_time)
     tracker._state.estimated_seconds = 10.0
 
     job = SimpleNamespace(metadata=None)
@@ -107,9 +105,7 @@ def test_progress_does_not_exceed_90_during_processing():
     def fake_time():
         return time_values[0]
 
-    tracker = ProgressTracker(
-        progress_bar_factory=FakeBar, time_provider=fake_time
-    )
+    tracker = ProgressTracker(progress_bar_factory=FakeBar, time_provider=fake_time)
     tracker._state.estimated_seconds = 10.0
 
     job = SimpleNamespace(metadata=None)

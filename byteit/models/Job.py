@@ -41,7 +41,7 @@ class Job:
         is_completed: True if job finished successfully
         is_failed: True if job failed
         is_processing: True if job is currently being processed
-    """  # noqa: E501
+    """
 
     id: str
     created_at: datetime
@@ -85,17 +85,13 @@ class Job:
         # Parse datetime fields
         created_at = data.get("created_at")
         if isinstance(created_at, str):
-            created_at = datetime.fromisoformat(
-                created_at.replace("Z", "+00:00")
-            )
+            created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
         else:
             created_at = datetime.now()  # fallback
 
         updated_at = data.get("updated_at")
         if isinstance(updated_at, str):
-            updated_at = datetime.fromisoformat(
-                updated_at.replace("Z", "+00:00")
-            )
+            updated_at = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
         else:
             updated_at = datetime.now()  # fallback
 
@@ -117,9 +113,7 @@ class Job:
             metadata_dict = cast(dict[str, Any], data["metadata"])
             try:
                 metadata = DocumentMetadata(
-                    original_filename=metadata_dict.get(
-                        "original_filename", ""
-                    ),
+                    original_filename=metadata_dict.get("original_filename", ""),
                     document_type=metadata_dict.get("document_type", ""),
                     page_count=metadata_dict.get("page_count"),
                     language=metadata_dict.get("language", "en"),
@@ -133,12 +127,8 @@ class Job:
         # Parse processing options
         processing_options = None
         processing_options_data = data.get("processing_options")
-        if processing_options_data and isinstance(
-            processing_options_data, dict
-        ):
-            processing_options = ProcessingOptions.from_dict(
-                processing_options_data
-            )
+        if processing_options_data and isinstance(processing_options_data, dict):
+            processing_options = ProcessingOptions.from_dict(processing_options_data)
 
         return cls(
             id=data["id"],
