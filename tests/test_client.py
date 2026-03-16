@@ -1,7 +1,8 @@
 """Tests for ByteITClient."""
 
+import sys
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 import requests
@@ -31,16 +32,12 @@ class TestByteITClientInit:
 
     def test_init_with_empty_key(self):
         """Empty API key raises APIKeyError."""
-        with pytest.raises(
-            APIKeyError, match="API key must be a non-empty string"
-        ):
+        with pytest.raises(APIKeyError, match="API key must be a non-empty string"):
             ByteITClient(api_key="")
 
     def test_init_without_key(self):
         """Missing API key raises APIKeyError."""
-        with pytest.raises(
-            APIKeyError, match="API key must be a non-empty string"
-        ):
+        with pytest.raises(APIKeyError, match="API key must be a non-empty string"):
             ByteITClient(api_key=None)
 
 
@@ -51,9 +48,7 @@ class TestInputConnectorConversion:
         """String path converts to LocalFileInputConnector."""
         client = ByteITClient("test_key")
 
-        with patch(
-            "byteit.ByteITClient.LocalFileInputConnector"
-        ) as mock_connector:
+        with patch("byteit.ByteITClient.LocalFileInputConnector") as mock_connector:
             mock_connector.return_value = Mock()
             result = client._to_input_connector("test.pdf")  # noqa: F841
             mock_connector.assert_called_once_with(file_path="test.pdf")
@@ -62,9 +57,7 @@ class TestInputConnectorConversion:
         """Path object converts to LocalFileInputConnector."""
         client = ByteITClient("test_key")
 
-        with patch(
-            "byteit.ByteITClient.LocalFileInputConnector"
-        ) as mock_connector:
+        with patch("byteit.ByteITClient.LocalFileInputConnector") as mock_connector:
             mock_connector.return_value = Mock()
             result = client._to_input_connector(Path("test.pdf"))  # noqa: F841
             mock_connector.assert_called_once_with(file_path="test.pdf")
@@ -246,9 +239,7 @@ class TestWaitForCompletion:
     @patch("byteit.ByteITClient.ProgressTracker")
     @patch.object(ByteITClient, "_get_job_status")
     @patch("time.sleep")
-    def test_wait_returns_on_completion(
-        self, mock_sleep, mock_get_status, mock_tracker
-    ):
+    def test_wait_returns_on_completion(self, mock_sleep, mock_get_status, mock_tracker):
         """Polling stops when job completes."""
         client = ByteITClient("test_key")
 
@@ -329,14 +320,10 @@ class TestParse:
 
     @patch.object(ByteITClient, "_download_result")
     @patch.object(ByteITClient, "_wait_for_completion")
-    @patch.object(ByteITClient, "_create_job")
-    @patch.object(ByteITClient, "_to_input_connector")
-    @patch.object(ByteITClient, "_to_output_connector")
+    @patch.object(ByteITClient, "_submit_job")
     def test_parse_returns_bytes(
         self,
-        mock_to_output,
-        mock_to_input,
-        mock_create,
+        mock_submit,
         mock_wait,
         mock_download,
     ):
@@ -344,36 +331,26 @@ class TestParse:
         client = ByteITClient("test_key")
 
         mock_connector = Mock()
-        mock_to_input.return_value = mock_connector
-        mock_to_output.return_value = Mock()
-
         mock_job = Mock()
         mock_job.id = "job_123"
-        mock_create.return_value = mock_job
+        mock_submit.return_value = (mock_job, mock_connector)
 
         mock_download.return_value = b"parsed content"
 
         result = client.parse("test.pdf")
 
         assert result == b"parsed content"
-        mock_to_input.assert_called_once_with("test.pdf")
-        mock_create.assert_called_once()
-        mock_wait.assert_called_once_with(
-            "job_123", input_connector=mock_connector
-        )
+        mock_submit.assert_called_once_with("test.pdf", None, "md", None)
+        mock_wait.assert_called_once_with("job_123", input_connector=mock_connector)
         mock_download.assert_called_once_with("job_123")
 
     @patch.object(ByteITClient, "_try_display_result")
     @patch.object(ByteITClient, "_download_result")
     @patch.object(ByteITClient, "_wait_for_completion")
-    @patch.object(ByteITClient, "_create_job")
-    @patch.object(ByteITClient, "_to_input_connector")
-    @patch.object(ByteITClient, "_to_output_connector")
+    @patch.object(ByteITClient, "_submit_job")
     def test_parse_calls_display_when_no_output(
         self,
-        mock_to_output,
-        mock_to_input,
-        mock_create,
+        mock_submit,
         mock_wait,  # noqa: ARG002
         mock_download,
         mock_display,
@@ -382,12 +359,9 @@ class TestParse:
         client = ByteITClient("test_key")
 
         mock_connector = Mock()
-        mock_to_input.return_value = mock_connector
-        mock_to_output.return_value = Mock()
-
         mock_job = Mock()
         mock_job.id = "job_123"
-        mock_create.return_value = mock_job
+        mock_submit.return_value = (mock_job, mock_connector)
 
         mock_download.return_value = b"parsed content"
 
@@ -398,16 +372,12 @@ class TestParse:
 
     @patch.object(ByteITClient, "_download_result")
     @patch.object(ByteITClient, "_wait_for_completion")
-    @patch.object(ByteITClient, "_create_job")
-    @patch.object(ByteITClient, "_to_input_connector")
-    @patch.object(ByteITClient, "_to_output_connector")
+    @patch.object(ByteITClient, "_submit_job")
     @patch("pathlib.Path.write_bytes")
     def test_parse_saves_to_file(
         self,
         mock_write,
-        mock_to_output,
-        mock_to_input,
-        mock_create,
+        mock_submit,
         mock_wait,
         mock_download,
     ):
@@ -415,12 +385,9 @@ class TestParse:
         client = ByteITClient("test_key")
 
         mock_connector = Mock()
-        mock_to_input.return_value = mock_connector
-        mock_to_output.return_value = Mock()
-
         mock_job = Mock()
         mock_job.id = "job_123"
-        mock_create.return_value = mock_job
+        mock_submit.return_value = (mock_job, mock_connector)
 
         mock_download.return_value = b"parsed content"
 
@@ -428,9 +395,113 @@ class TestParse:
 
         assert result == b"parsed content"
         mock_write.assert_called_once_with(b"parsed content")
-        mock_wait.assert_called_once_with(
-            "job_123", input_connector=mock_connector
+        mock_wait.assert_called_once_with("job_123", input_connector=mock_connector)
+
+
+class TestParseAsync:
+    """Test parse_async method."""
+
+    @patch.object(ByteITClient, "_submit_job")
+    def test_parse_async_returns_job(self, mock_submit):
+        """parse_async returns Job immediately without waiting."""
+        client = ByteITClient("test_key")
+
+        mock_job = Mock(spec=Job)
+        mock_job.id = "job_123"
+        mock_submit.return_value = (mock_job, Mock())
+
+        result = client.parse_async("test.pdf")
+
+        assert result is mock_job
+        mock_submit.assert_called_once_with("test.pdf", None, "md")
+
+    @patch.object(ByteITClient, "_submit_job")
+    def test_parse_async_with_options(self, mock_submit):
+        """parse_async forwards processing options."""
+        client = ByteITClient("test_key")
+
+        mock_job = Mock(spec=Job)
+        mock_job.id = "job_456"
+        mock_submit.return_value = (mock_job, Mock())
+
+        opts = {"languages": ["de"], "page_range": "1-3"}
+        result = client.parse_async(
+            "test.pdf", processing_options=opts, result_format="json"
         )
+
+        assert result is mock_job
+        mock_submit.assert_called_once_with("test.pdf", opts, "json")
+
+    @patch.object(ByteITClient, "_submit_job")
+    def test_parse_async_does_not_wait(self, mock_submit):
+        """parse_async doesn't call _wait_for_completion or _download_result."""
+        client = ByteITClient("test_key")
+
+        mock_job = Mock(spec=Job)
+        mock_job.id = "job_789"
+        mock_submit.return_value = (mock_job, Mock())
+
+        with (
+            patch.object(client, "_wait_for_completion") as mock_wait,
+            patch.object(client, "_download_result") as mock_download,
+        ):
+            client.parse_async("test.pdf")
+            mock_wait.assert_not_called()
+            mock_download.assert_not_called()
+
+
+class TestSubmitJob:
+    """Test _submit_job helper method."""
+
+    @patch.object(ByteITClient, "_create_job")
+    @patch.object(ByteITClient, "_to_output_connector")
+    @patch.object(ByteITClient, "_to_input_connector")
+    def test_submit_job_creates_connectors_and_job(
+        self, mock_to_input, mock_to_output, mock_create
+    ):
+        """_submit_job wires connectors and returns job + input_connector."""
+        client = ByteITClient("test_key")
+
+        mock_input_conn = Mock()
+        mock_output_conn = Mock()
+        mock_job = Mock(spec=Job)
+        mock_to_input.return_value = mock_input_conn
+        mock_to_output.return_value = mock_output_conn
+        mock_create.return_value = mock_job
+
+        job, input_conn = client._submit_job("test.pdf", None, "md", None)
+
+        assert job is mock_job
+        assert input_conn is mock_input_conn
+        mock_to_input.assert_called_once_with("test.pdf")
+        mock_to_output.assert_called_once_with(None)
+        mock_create.assert_called_once_with(
+            input_connector=mock_input_conn,
+            output_connector=mock_output_conn,
+            processing_options=None,
+            result_format="md",
+        )
+
+    @patch.object(ByteITClient, "_create_job")
+    @patch.object(ByteITClient, "_to_output_connector")
+    @patch.object(ByteITClient, "_to_input_connector")
+    def test_submit_job_coerces_dict_to_processing_options(
+        self, mock_to_input, mock_to_output, mock_create
+    ):
+        """_submit_job converts dict to ProcessingOptions."""
+        client = ByteITClient("test_key")
+
+        mock_to_input.return_value = Mock()
+        mock_to_output.return_value = Mock()
+        mock_create.return_value = Mock(spec=Job)
+
+        client._submit_job("test.pdf", {"languages": ["de"]}, "json")
+
+        call_kwargs = mock_create.call_args[1]
+        from byteit.models.ProcessingOptions import ProcessingOptions
+
+        assert isinstance(call_kwargs["processing_options"], ProcessingOptions)
+        assert call_kwargs["processing_options"].languages == ["de"]
 
 
 class TestContextManager:
@@ -456,43 +527,51 @@ class TestGetJobs:
     """Test job retrieval methods."""
 
     @patch.object(ByteITClient, "_list_jobs")
-    def test_get_all_jobs(self, mock_list):
-        """get_all_jobs returns job list."""
+    def test_get_jobs(self, mock_list):
+        """get_jobs returns job list."""
         client = ByteITClient("test_key")
 
         mock_job_list = Mock()
         mock_job_list.jobs = [Mock(), Mock()]
         mock_list.return_value = mock_job_list
 
-        result = client.get_all_jobs()
+        result = client.get_jobs()
 
         assert result == mock_job_list.jobs
         assert len(result) == 2
 
     @patch.object(ByteITClient, "_get_job_status")
-    def test_get_job_by_id(self, mock_get_status):
-        """get_job_by_id returns specific job."""
+    def test_get_job_status(self, mock_get_status):
+        """get_job_status returns specific job."""
         client = ByteITClient("test_key")
 
         mock_job = Mock()
         mock_get_status.return_value = mock_job
 
-        result = client.get_job_by_id("job_123")
+        result = client.get_job_status("job_123")
 
         assert result == mock_job
         mock_get_status.assert_called_once_with("job_123")
 
     @patch.object(ByteITClient, "_download_result")
-    def test_get_result(self, mock_download):
-        """get_result downloads job result."""
+    def test_get_job_result(self, mock_download):
+        """get_job_result downloads job result."""
         client = ByteITClient("test_key")
 
         mock_download.return_value = b"result content"
 
-        result = client.get_result("job_123")
+        result = client.get_job_result("job_123")
 
         assert result == b"result content"
         mock_download.assert_called_once_with("job_123")
+
+
+def _make_ipython_mock():
+    """Build a minimal sys.modules mock for IPython.display."""
+    mock_display_mod = MagicMock()
+    mock_ipython = MagicMock()
+    mock_ipython.display = mock_display_mod
+    return mock_ipython, mock_display_mod
 
 
 class TestDisplayResult:
@@ -501,55 +580,62 @@ class TestDisplayResult:
     def test_display_json_in_notebook(self):
         """Display JSON when IPython is available."""
         client = ByteITClient("test_key")
+        mock_ipython, mock_display_mod = _make_ipython_mock()
 
-        with patch("IPython.display.display") as mock_display:  # noqa: SIM117
-            with patch("IPython.display.JSON") as mock_json:
-                json_data = b'{"key": "value"}'
-                client._try_display_result(json_data, "json")
+        with patch.dict(
+            sys.modules,
+            {"IPython": mock_ipython, "IPython.display": mock_display_mod},
+        ):
+            client._try_display_result(b'{"key": "value"}', "json")
 
-                mock_json.assert_called_once()
-                mock_display.assert_called_once()
+        mock_display_mod.display.assert_called_once()
+        mock_display_mod.JSON.assert_called_once()
 
     def test_display_markdown_in_notebook(self):
         """Display Markdown when IPython is available."""
         client = ByteITClient("test_key")
+        mock_ipython, mock_display_mod = _make_ipython_mock()
 
-        with patch("IPython.display.display") as mock_display:  # noqa: SIM117
-            with patch("IPython.display.Markdown") as mock_md:
-                md_data = b"# Header"
-                client._try_display_result(md_data, "md")
+        with patch.dict(
+            sys.modules,
+            {"IPython": mock_ipython, "IPython.display": mock_display_mod},
+        ):
+            client._try_display_result(b"# Header", "md")
 
-                mock_md.assert_called_once()
-                mock_display.assert_called_once()
+        mock_display_mod.display.assert_called_once()
+        mock_display_mod.Markdown.assert_called_once()
 
     def test_display_html_in_notebook(self):
         """Display HTML when IPython is available."""
         client = ByteITClient("test_key")
+        mock_ipython, mock_display_mod = _make_ipython_mock()
 
-        with patch("IPython.display.display") as mock_display:  # noqa: SIM117
-            with patch("IPython.display.HTML") as mock_html:
-                html_data = b"<h1>Header</h1>"
-                client._try_display_result(html_data, "html")
+        with patch.dict(
+            sys.modules,
+            {"IPython": mock_ipython, "IPython.display": mock_display_mod},
+        ):
+            client._try_display_result(b"<h1>Header</h1>", "html")
 
-                mock_html.assert_called_once()
-                mock_display.assert_called_once()
+        mock_display_mod.display.assert_called_once()
+        mock_display_mod.HTML.assert_called_once()
 
     def test_display_text_in_notebook(self):
         """Display text with code block when IPython is available."""
         client = ByteITClient("test_key")
+        mock_ipython, mock_display_mod = _make_ipython_mock()
 
-        with patch("IPython.display.display") as mock_display:  # noqa: SIM117
-            with patch("IPython.display.Markdown") as mock_md:
-                text_data = b"Plain text"
-                client._try_display_result(text_data, "txt")
+        with patch.dict(
+            sys.modules,
+            {"IPython": mock_ipython, "IPython.display": mock_display_mod},
+        ):
+            client._try_display_result(b"Plain text", "txt")
 
-                mock_md.assert_called_once()
-                mock_display.assert_called_once()
+        mock_display_mod.display.assert_called_once()
+        mock_display_mod.Markdown.assert_called_once()
 
     def test_display_handles_import_error(self):
-        """Gracefully handle when IPython is not available."""
+        """Gracefully skip display when IPython is not available."""
         client = ByteITClient("test_key")
-
-        # Should not raise an error even when IPython is not available
-        with patch("builtins.__import__", side_effect=ImportError):
-            client._try_display_result(b"test", "txt")  # Should not raise
+        # Remove IPython from sys.modules to simulate it not being installed
+        with patch.dict(sys.modules, {"IPython": None, "IPython.display": None}):
+            client._try_display_result(b"test", "txt")  # must not raise

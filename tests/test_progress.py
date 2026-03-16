@@ -34,7 +34,7 @@ def test_progress_message_ranges():  # noqa: D103
     assert tracker._progress_message(69.9) == "Parsing"
     assert tracker._progress_message(70) == "Post-processing"
     assert tracker._progress_message(89.9) == "Post-processing"
-    assert tracker._progress_message(90) == "Validation"
+    assert tracker._progress_message(90) == "Download"
 
 
 def test_estimate_times_for_extensions(monkeypatch):  # noqa: D103
@@ -55,9 +55,7 @@ def test_update_advances_progress_with_time():  # noqa: D103
     def fake_time():
         return time_values[0]
 
-    tracker = ProgressTracker(
-        progress_bar_factory=FakeBar, time_provider=fake_time
-    )
+    tracker = ProgressTracker(progress_bar_factory=FakeBar, time_provider=fake_time)
     tracker._state.estimated_seconds = 10.0
 
     job = SimpleNamespace(metadata=None)
@@ -82,7 +80,7 @@ def test_finalize_completes_bar():  # noqa: D103
     tracker.finalize()
 
     assert tracker._bar.total_updates == 10.0
-    assert tracker._bar.description == "Validation"
+    assert tracker._bar.description == "Download"
     assert tracker._bar.closed is True
 
 
@@ -107,9 +105,7 @@ def test_progress_does_not_exceed_90_during_processing():
     def fake_time():
         return time_values[0]
 
-    tracker = ProgressTracker(
-        progress_bar_factory=FakeBar, time_provider=fake_time
-    )
+    tracker = ProgressTracker(progress_bar_factory=FakeBar, time_provider=fake_time)
     tracker._state.estimated_seconds = 10.0
 
     job = SimpleNamespace(metadata=None)
@@ -120,7 +116,7 @@ def test_progress_does_not_exceed_90_during_processing():
 
     # Should not exceed 90%
     assert tracker._bar.total_updates == 90.0
-    assert tracker._bar.description == "Validation"
+    assert tracker._bar.description == "Download"
 
 
 def test_close_without_finalize():

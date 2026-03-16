@@ -77,17 +77,13 @@ class ProgressTracker:
                 per_page = random.uniform(6.0, 8.0)
                 self._state.estimated_seconds = 85.0 + per_page * page_count
             else:
-                self._state.estimated_seconds = (
-                    self._estimate_processing_seconds(
-                        self._input_extension, page_count
-                    )
+                self._state.estimated_seconds = self._estimate_processing_seconds(
+                    self._input_extension, page_count
                 )
 
         elapsed = self._time_provider() - self._state.start_time
         if self._state.estimated_seconds > 0:
-            target_progress = min(
-                90.0, (elapsed / self._state.estimated_seconds) * 90.0
-            )
+            target_progress = min(90.0, (elapsed / self._state.estimated_seconds) * 90.0)
         else:
             target_progress = 90.0
 
@@ -128,9 +124,7 @@ class ProgressTracker:
         """Close progress bar without finalizing."""
         self._bar.close()
 
-    def _get_input_extension(
-        self, input_connector: InputConnector | None
-    ) -> str:
+    def _get_input_extension(self, input_connector: InputConnector | None) -> str:
         """Get lowercase file extension from input connector if available."""
         if input_connector is None:
             return ""

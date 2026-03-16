@@ -43,8 +43,9 @@ class S3InputConnector(InputConnector):
 
         Args:
             source_bucket: S3 bucket name where the file is located
-            source_path_inside_bucket: Path to the file within the bucket (e.g., "folder/file.pdf")
-        """  # noqa: E501
+            source_path_inside_bucket: Path to the file within the bucket
+            (e.g., "folder/file.pdf")
+        """
         self.source_bucket = source_bucket
         self.source_path_inside_bucket = source_path_inside_bucket
 

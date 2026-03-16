@@ -1,9 +1,11 @@
-requests>=2.28.0
+# install the main dependencies
+-r requirements.txt
+
+# testing and packaging
 pytest>=7.0.0
 pytest-cov>=4.0.0
 build>=1.0.0
 twine>=4.0.0
-tqdm>=4.65.0
 
 # linter and formatter
 ruff==0.15.2
