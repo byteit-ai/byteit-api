@@ -43,7 +43,7 @@ jobs:
       - name: Check __init__.py fallback version
         run: |
           INIT_VERSION=$(grep -E '__version__\s*=\s*"[0-9]+\.[0-9]+\.[0-9]+"' byteit/__init__.py \
-            | sed -E 's/.*"([0-9]+\.[0-9]+\.[0-9]+)"/\1/')
+            | sed -E 's/.*"([0-9]+\.[0-9]+\.[0-9]+)".*/\1/')
 
           if [ -z "$INIT_VERSION" ]; then
             echo "::error::Could not extract fallback version from byteit/__init__.py"
