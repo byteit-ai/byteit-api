@@ -1,4 +1,4 @@
-"""ByteIT API client."""  # noqa: N999
+"""ByteIT API client."""
 
 import json
 import time

@@ -1,0 +1,154 @@
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Pre-merge release readiness checks for PRs to main.
+#  Ensures versions, changelog, and tags are all in sync
+#  BEFORE the merge — so publish-pypi.yml never fails.
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+name: Release Readiness
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  release-check:
+    name: Validate release readiness
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ── 1. Extract version from pyproject.toml ──
+      - name: Extract version from pyproject.toml
+        id: version
+        run: |
+          VERSION=$(grep -E '^version\s*=\s*"[0-9]+\.[0-9]+\.[0-9]+"' pyproject.toml \
+            | sed -E 's/.*"([0-9]+\.[0-9]+\.[0-9]+)"/\1/')
+
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not extract version from pyproject.toml"
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "✅ pyproject.toml version: $VERSION"
+
+      # ── 2. __init__.py fallback matches pyproject.toml ──
+      - name: Check __init__.py fallback version
+        run: |
+          INIT_VERSION=$(grep -E '__version__\s*=\s*"[0-9]+\.[0-9]+\.[0-9]+"' byteit/__init__.py \
+            | sed -E 's/.*"([0-9]+\.[0-9]+\.[0-9]+)"/\1/')
+
+          if [ -z "$INIT_VERSION" ]; then
+            echo "::error::Could not extract fallback version from byteit/__init__.py"
+            exit 1
+          fi
+
+          if [ "$INIT_VERSION" != "${{ steps.version.outputs.version }}" ]; then
+            echo "::error::byteit/__init__.py fallback ($INIT_VERSION) ≠ pyproject.toml (${{ steps.version.outputs.version }})"
+            exit 1
+          fi
+
+          echo "✅ __init__.py fallback matches: $INIT_VERSION"
+
+      # ── 3. CHANGELOG has a dated entry for this version ──
+      - name: Check CHANGELOG entry
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          if ! grep -qE "^## \[$VERSION\] - [0-9]{4}-[0-9]{2}-[0-9]{2}" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md missing dated entry for version $VERSION (expected: ## [$VERSION] - YYYY-MM-DD)"
+            exit 1
+          fi
+
+          echo "✅ CHANGELOG.md has dated entry for $VERSION"
+
+      # ── 4. [Unreleased] section has no content ──
+      - name: Check Unreleased section is empty
+        run: |
+          # Extract text between [Unreleased] and the next ## heading
+          UNRELEASED=$(sed -n '/^## \[Unreleased\]/,/^## \[/{ /^## \[/d; p; }' CHANGELOG.md \
+            | grep -v '^\s*$' || true)
+
+          if [ -n "$UNRELEASED" ]; then
+            echo "::error::[Unreleased] section still has content — move it to the [${{ steps.version.outputs.version }}] section"
+            echo "Found:"
+            echo "$UNRELEASED"
+            exit 1
+          fi
+
+          echo "✅ [Unreleased] section is empty"
+
+      # ── 5. Version is bumped compared to main ──
+      - name: Check version is bumped vs main
+        run: |
+          git fetch origin main
+          MAIN_VERSION=$(git show origin/main:pyproject.toml \
+            | grep -E '^version\s*=\s*"[0-9]+\.[0-9]+\.[0-9]+"' \
+            | sed -E 's/.*"([0-9]+\.[0-9]+\.[0-9]+)"/\1/')
+
+          PR_VERSION="${{ steps.version.outputs.version }}"
+
+          if [ "$MAIN_VERSION" = "$PR_VERSION" ]; then
+            echo "::error::Version $PR_VERSION is the same as main — bump the version"
+            exit 1
+          fi
+
+          # Compare semver (major.minor.patch) to ensure it's higher
+          version_gt() {
+            [ "$(printf '%s\n' "$1" "$2" | sort -V | tail -n1)" = "$1" ]
+          }
+
+          if ! version_gt "$PR_VERSION" "$MAIN_VERSION"; then
+            echo "::error::PR version ($PR_VERSION) is not greater than main ($MAIN_VERSION)"
+            exit 1
+          fi
+
+          echo "✅ Version bumped: $MAIN_VERSION → $PR_VERSION"
+
+      # ── 6. Last commit message is chore(release): X.Y.Z ──
+      - name: Check last commit message
+        run: |
+          COMMIT_MSG=$(git log -1 --pretty=%s)
+          VERSION="${{ steps.version.outputs.version }}"
+
+          echo "Last commit: $COMMIT_MSG"
+
+          if ! echo "$COMMIT_MSG" | grep -Eq '^chore\(release\): [0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Last commit must be: chore(release): $VERSION (got: $COMMIT_MSG)"
+            exit 1
+          fi
+
+          MSG_VERSION=$(echo "$COMMIT_MSG" | sed -E 's/^chore\(release\): ([0-9]+\.[0-9]+\.[0-9]+)$/\1/')
+          if [ "$MSG_VERSION" != "$VERSION" ]; then
+            echo "::error::Commit message version ($MSG_VERSION) ≠ pyproject.toml ($VERSION)"
+            exit 1
+          fi
+
+          echo "✅ Last commit: chore(release): $VERSION"
+
+      # ── 7. Tag v{version} does not already exist ──
+      - name: Check tag does not already exist
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          if git rev-parse "refs/tags/v$VERSION" >/dev/null 2>&1; then
+            echo "::error::Tag v$VERSION already exists — this version was already released"
+            exit 1
+          fi
+
+          echo "✅ Tag v$VERSION is available"
+
+      # ── Summary ──
+      - name: Summary
+        run: |
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  Release ${{ steps.version.outputs.version }} is ready to merge"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

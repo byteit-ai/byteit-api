@@ -1,4 +1,4 @@
-"""AWS S3 input connector for ByteIT."""  # noqa: N999
+"""AWS S3 input connector for ByteIT."""
 
 from pathlib import Path
 from typing import Any

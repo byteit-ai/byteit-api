@@ -1,4 +1,4 @@
-"""AWS S3 output connector for ByteIT."""  # noqa: N999
+"""AWS S3 output connector for ByteIT."""
 
 from typing import Any
 

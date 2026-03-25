@@ -104,18 +104,24 @@ class ProgressTracker:
                     steps = 40
                     step = remaining / steps
                     for i in range(steps):  # noqa: B007
-                        self._bar.set_description("Download")
+                        self._bar.set_description(
+                            "Delayed due to high load. Wait or check later with get_job_result(job_id)."  # noqa: E501
+                        )
                         self._bar.update(step)
                         self._state.last_progress += step
                         time.sleep(2.0 / steps)
                     self._state.last_progress = 100.0
-                    self._bar.set_description("Download")
+                    self._bar.set_description(
+                        "Delayed due to high load. Wait or check later with get_job_result(job_id)."  # noqa: E501
+                    )
                     self._bar.n = 100
                     self._bar.refresh()
                     self._bar.close()
                     return
         if self._state.last_progress < 100:
-            self._bar.set_description("Download")
+            self._bar.set_description(
+                "Delayed due to high load. Wait or check later with get_job_result(job_id)."  # noqa: E501
+            )
             self._bar.update(100 - self._state.last_progress)
             self._state.last_progress = 100.0
         self._bar.close()
@@ -157,11 +163,13 @@ class ProgressTracker:
     def _progress_message(self, progress: float) -> str:
         """Select grounded progress messages by phase."""
         if progress < 10:
-            return "Upload"
+            return "Initialising"
         if progress < 25:
             return "Preprocessing"
         if progress < 70:
             return "Parsing"
         if progress < 90:
             return "Post-processing"
-        return "Download"
+        return (
+            "Delayed due to high load. Wait or check later with get_job_result(job_id)."
+        )

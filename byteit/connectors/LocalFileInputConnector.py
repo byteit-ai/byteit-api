@@ -1,4 +1,4 @@
-"""Local file input connector for ByteIT."""  # noqa: N999
+"""Local file input connector for ByteIT."""
 
 from pathlib import Path
 from typing import Any

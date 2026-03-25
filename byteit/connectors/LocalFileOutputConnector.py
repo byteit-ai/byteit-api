@@ -1,4 +1,4 @@
-"""ByteIT cloud storage output connector."""  # noqa: N999
+"""ByteIT cloud storage output connector."""
 
 from typing import Any
 

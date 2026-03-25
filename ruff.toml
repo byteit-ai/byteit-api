@@ -55,7 +55,7 @@ select = [
     "RUF100", # detect unused noqa comments
 ]
 
-ignore = []
+ignore = ["N999"]
 
 [lint.pydocstyle]
 convention = "google"
