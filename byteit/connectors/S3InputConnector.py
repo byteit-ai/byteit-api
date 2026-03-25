@@ -1,7 +1,7 @@
 """AWS S3 input connector for ByteIT."""
 
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any
 
 from .base import InputConnector
 
@@ -39,12 +39,12 @@ class S3InputConnector(InputConnector):
         source_bucket: str,
         source_path_inside_bucket: str,
     ):
-        """
-        Initialize S3 input connector.
+        """Initialize S3 input connector.
 
         Args:
             source_bucket: S3 bucket name where the file is located
-            source_path_inside_bucket: Path to the file within the bucket (e.g., "folder/file.pdf")
+            source_path_inside_bucket: Path to the file within the bucket
+            (e.g., "folder/file.pdf")
         """
         self.source_bucket = source_bucket
         self.source_path_inside_bucket = source_path_inside_bucket
@@ -52,9 +52,8 @@ class S3InputConnector(InputConnector):
         # Extract filename for display
         self.filename = Path(source_path_inside_bucket).name
 
-    def get_file_data(self) -> Tuple[str, Dict[str, Any]]:
-        """
-        Return connection configuration for the ByteIT server.
+    def get_file_data(self) -> tuple[str, dict[str, Any]]:
+        """Return connection configuration for the ByteIT server.
 
         This method does NOT download the file. Instead, it returns metadata
         that tells the ByteIT server how to fetch the file from S3.
@@ -68,9 +67,8 @@ class S3InputConnector(InputConnector):
         }
         return (self.filename, connection_data)
 
-    def to_dict(self) -> Dict[str, Any]:
-        """
-        Serialize connector configuration.
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize connector configuration.
 
         Returns:
             Dictionary with connector type and configuration

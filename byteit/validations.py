@@ -1,20 +1,18 @@
 """Validation utilities for ByteIT API requests."""
 
-from typing import Any, Dict, List, Set
+from typing import Any
 
 from .exceptions import ValidationError
 
-
 # Valid processing option fields (only languages and page_range are allowed)
-VALID_PROCESSING_OPTIONS: Set[str] = {
+VALID_PROCESSING_OPTIONS: set[str] = {
     "languages",
     "page_range",
 }
 
 
-def validate_processing_options(options: Dict[str, Any]) -> None:
-    """
-    Validate processing options dictionary.
+def validate_processing_options(options: dict[str, Any]) -> None:
+    """Validate processing options dictionary.
 
     Only 'languages' and 'page_range' are allowed in processing_options.
     The 'output_format' should be passed as a top-level parameter, not
@@ -27,9 +25,9 @@ def validate_processing_options(options: Dict[str, Any]) -> None:
         ValidationError: If any unexpected or deprecated fields are found
 
     """
-    unexpected_fields: List[str] = []
+    unexpected_fields: list[str] = []
 
-    for field in options.keys():
+    for field in options:
         if field not in VALID_PROCESSING_OPTIONS:
             unexpected_fields.append(field)
 

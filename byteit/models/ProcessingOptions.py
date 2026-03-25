@@ -1,12 +1,10 @@
 """Processing options model for document processing."""
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Union
-
-from byteit.models.OutputFormat import OutputFormat
+from typing import Any
 
 
-def _default_list() -> List[str]:
+def _default_list() -> list[str]:
     """Factory function for default list."""
     return ["en"]
 
@@ -20,42 +18,20 @@ class ProcessingOptions:
     Attributes:
         languages: List of language codes for OCR/parsing (default: ['en'])
         page_range: Specific pages to process (e.g., '1-5' or '1,3,5')
-        output_format: Desired output format (txt, json, html, md)
-
-    Note:
-        The output_format is extracted and sent separately in API requests,
-        while languages and page_range are sent as processing_options.
     """
 
-    languages: List[str] = field(default_factory=_default_list)
+    languages: list[str] = field(default_factory=_default_list)
     page_range: str = field(default="")
-    output_format: Union[OutputFormat, str] = OutputFormat.TXT
+    image_annotations: bool = field(default=False)
+    table_enrichment: bool = field(default=False)
 
-    def __post_init__(self) -> None:
-        """Validate and convert processing options."""
-        # Convert string to OutputFormat if necessary
-        if isinstance(self.output_format, str):
-            try:
-                object.__setattr__(
-                    self, "output_format", OutputFormat(self.output_format)
-                )
-            except ValueError as exc:
-                raise ValueError(
-                    f"Invalid output format: {self.output_format}. "
-                    f"Valid formats are: txt, json, html, md"
-                ) from exc
-
-    def to_dict(self) -> Dict[str, Any]:
-        """
-        Convert ProcessingOptions to dictionary for API communication.
-
-        Note: output_format is included here but will be extracted by the
-        API client and sent as a top-level parameter.
+    def to_dict(self) -> dict[str, Any]:
+        """Convert ProcessingOptions to dictionary for API communication.
 
         Returns:
             Dictionary representation suitable for API requests
         """
-        result: Dict[str, Any] = {}
+        result: dict[str, Any] = {}
 
         if self.languages:
             result["languages"] = self.languages
@@ -63,18 +39,17 @@ class ProcessingOptions:
         if self.page_range:
             result["page_range"] = self.page_range
 
-        # Include output_format for extraction by API client
-        if isinstance(self.output_format, OutputFormat):
-            result["output_format"] = self.output_format.value
-        else:
-            result["output_format"] = str(self.output_format)
+        if self.image_annotations:
+            result["image_annotations"] = self.image_annotations
+
+        if self.table_enrichment:
+            result["table_enrichment"] = self.table_enrichment
 
         return result
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ProcessingOptions":
-        """
-        Create ProcessingOptions from dictionary.
+    def from_dict(cls, data: dict[str, Any]) -> "ProcessingOptions":
+        """Create ProcessingOptions from dictionary.
 
         Args:
             data: Dictionary containing processing options
@@ -84,13 +59,12 @@ class ProcessingOptions:
         """
         languages = data.get("languages", ["en"])
         page_range = data.get("page_range", "")
-        output_format_str = data.get("output_format", "txt")
-
-        # Convert output_format to enum
-        output_format = OutputFormat(output_format_str)
+        image_annotations = data.get("image_annotations", False)
+        table_enrichment = data.get("table_enrichment", False)
 
         return cls(
             languages=languages,
             page_range=page_range,
-            output_format=output_format,
+            image_annotations=image_annotations,
+            table_enrichment=table_enrichment,
         )

@@ -1,19 +1,16 @@
 # ByteIT Python SDK
 
-ByteIT's Python library for extracting structured data from documents.
-It is designed for backend services and ETL pipelines that require reliable, consistent document parsing at scale through a simple API.
+Python client for [ByteIT](https://byteit.ai) — AI-powered document parsing. Extract structured text from PDFs, Word files, images, and more with a single API call.
 
 ---
 
 ## Installation
 
-Install from PyPI:
-
 ```bash
 pip install byteit
 ```
 
-Python 3.8 or newer is required.
+Requires Python 3.8+ and an API key from [byteit.ai](https://byteit.ai).
 
 ---
 
@@ -23,215 +20,198 @@ Python 3.8 or newer is required.
 from byteit import ByteITClient
 
 client = ByteITClient(api_key="your_api_key")
-
 result = client.parse("document.pdf")
 print(result.decode())
 ```
 
-The returned value is raw bytes containing the parsed document content.
+Returns raw bytes. Pass `output="result.md"` to save directly to disk.
 
 ---
 
-## Supported Input File Types
+## Usage
 
-ByteIT supports the following file types as input:
-
-* PDF (`.pdf`)
-* Word (`.docx`)
-* PowerPoint (`.pptx`)
-* HTML (`.html`)
-* Markdown (`.md`)
-* Plain text (`.txt`)
-* JSON (`.json`)
-* XML (`.xml`)
-
----
-
-## Basic Usage
-
-### Parse a Local File
+### Parse and save
 
 ```python
-result = client.parse("invoice.pdf")
+# Returns bytes
+result = client.parse("invoice.pdf", result_format="json")
+
+# Save to file
+client.parse("invoice.pdf", result_format="md", output="invoice.md")
 ```
 
-By default, the output format is **Markdown (`md`)**.
+**Output formats:** `md` *(default)*, `txt`, `json`, `html`
 
----
+### Async (non-blocking)
 
-## Output Formats
-
-You can choose the output format depending on your pipeline needs:
+Submit a job and check back later — useful for large files or batch workflows.
 
 ```python
-txt = client.parse("doc.pdf", output_format="txt")
-json = client.parse("doc.pdf", output_format="json")
-md = client.parse("doc.pdf", output_format="md")
-html = client.parse("doc.pdf", output_format="html")
+# Submit without waiting
+job = client.parse_async("document.pdf")
+
+# Poll status
+status = client.get_job_status(job.id)
+# status.processing_status: "pending" | "processing" | "completed" | "failed"
+
+# Download when ready
+if status.is_completed:
+    result = client.get_job_result(job.id)
 ```
 
-Supported output formats:
-
-* Plain text (`txt`)
-* JSON (`json`)
-* Markdown (`md`) *(default)*
-* HTML (`html`)
-
----
-
-## Save Output to File
+### Job management
 
 ```python
-client.parse(
-    "doc.pdf",
-    output_format="md",
-    output="result.md"
+for job in client.get_jobs():
+    print(f"{job.id}  {job.processing_status}  {job.result_format}")
+```
+
+### Processing options
+
+```python
+from byteit import ProcessingOptions
+
+result = client.parse(
+    "document.pdf",
+    processing_options=ProcessingOptions(languages=["de", "en"], page_range="1-5"),
 )
 ```
 
-When `output` is provided, the parsed result is written directly to disk.
-
----
-
-## Notebook Integration
-
-When used in Jupyter notebooks, ByteIT automatically displays results in a readable format:
-
-* **JSON**: Interactive, expandable/collapsible tree view
-* **Markdown**: Rendered with formatting (headers, lists, etc.)
-* **HTML**: Rendered as HTML
-* **Text**: Code block with syntax highlighting
+Or pass a plain dict:
 
 ```python
-# In a Jupyter notebook - automatically displays formatted result
-result = client.parse("document.pdf", result_format="json")
+result = client.parse("doc.pdf", processing_options={"languages": ["de"]})
 ```
 
-To disable auto-display, save to a file instead:
+### API key from environment
 
 ```python
-# Saves to file, no auto-display
-result = client.parse("doc.pdf", result_format="json", output="output.json")
+import os
+client = ByteITClient(api_key=os.environ["BYTEIT_API_KEY"])
+```
+
+### Context manager
+
+```python
+with ByteITClient(api_key="your_key") as client:
+    result = client.parse("doc.pdf")
 ```
 
 ---
 
-## Typical Use Cases
+## Supported File Types
 
-* Extracting structured data from documents in ETL pipelines
-* Preprocessing documents before indexing or downstream processing
-* Automating ingestion of invoices, contracts, or reports
-* Interactive document exploration in Jupyter notebooks
-
----
-
-## API Reference
-
-### `ByteITClient`
-
-```python
-ByteITClient(api_key: str)
-```
-
-Creates a new ByteIT client.
-
-#### Parameters
-
-* `api_key` (`str`): Your ByteIT API key
-
----
-
-### `parse(...)`
-
-```python
-parse(
-    input,
-    output_format: str = "md",
-    output = None
-)
-```
-
-Parse a document and return the extracted content.
-
-#### Parameters
-
-* `input` (`str | Path`): Path to a local document
-* `output_format` (`str`): Output format (`txt`, `json`, `md`, `html`)
-* `output` (`str | Path | None`): Optional path to save the result
-
-#### Returns
-
-* `bytes`: Parsed document content
+| Documents | Images |
+|-----------|--------|
+| PDF `.pdf` | PNG `.png` |
+| Word `.docx` | JPEG `.jpg` `.jpeg` |
+| PowerPoint `.pptx` | TIFF `.tiff` |
+| HTML `.html` | BMP `.bmp` |
+| Markdown `.md` | |
+| Plain text `.txt` | |
+| JSON `.json` | |
+| XML `.xml` | |
 
 ---
 
 ## Error Handling
 
-The SDK exposes specific exceptions for common error cases:
+All exceptions inherit from `ByteITError`.
 
 ```python
 from byteit.exceptions import (
-    ByteITError,
-    ValidationError,
     AuthenticationError,
+    ValidationError,
     RateLimitError,
-    ServerError,
+    JobProcessingError,
+    ByteITError,
 )
 
 try:
     result = client.parse("document.pdf")
-except ValidationError as e:
-    print("Invalid input:", e.message)
 except AuthenticationError:
     print("Invalid API key")
+except ValidationError as e:
+    print("Bad request:", e.message)
 except RateLimitError:
-    print("Rate limit exceeded")
+    print("Rate limit hit — retry later")
+except JobProcessingError as e:
+    print("Processing failed:", e.message)
 except ByteITError as e:
-    print("ByteIT error:", e.message)
+    print("Unexpected error:", e.message)
 ```
 
-All exceptions inherit from `ByteITError`.
+| Exception | When raised |
+|---|---|
+| `AuthenticationError` | Invalid or missing API key |
+| `APIKeyError` | API key rejected (403) |
+| `ValidationError` | Bad request parameters |
+| `ResourceNotFoundError` | Job not found |
+| `RateLimitError` | Rate limit exceeded |
+| `JobProcessingError` | Job failed during processing |
+| `ServerError` | Server-side error (5xx) |
 
 ---
 
-## Configuration
+## API Reference
 
-### Environment Variable
+### `ByteITClient(api_key)`
 
-You can provide the API key via environment variable:
+| Method | Description |
+|---|---|
+| `parse(input, ...)` | Parse a document, block until complete, return `bytes` |
+| `parse_async(input, ...)` | Submit a job, return `Job` immediately |
+| `get_job_status(job_id)` | Get current `Job` status |
+| `get_job_result(job_id)` | Download result as `bytes` |
+| `get_jobs()` | List all jobs as `list[Job]` |
 
-```bash
-export BYTEIT_API_KEY="your_api_key"
-```
+#### `parse(input, output=None, processing_options=None, result_format="md") → bytes`
 
-```python
-import os
-from byteit import ByteITClient
+| Param | Type | Description |
+|---|---|---|
+| `input` | `str \| Path \| InputConnector` | File to parse |
+| `output` | `str \| Path \| None` | Save result to disk (optional) |
+| `processing_options` | `ProcessingOptions \| dict \| None` | Languages, page range, etc. |
+| `result_format` | `str` | `"md"`, `"txt"`, `"json"`, `"html"` |
 
-client = ByteITClient(api_key=os.getenv("BYTEIT_API_KEY"))
-```
+#### `parse_async(input, processing_options=None, result_format="md") → Job`
+
+Same parameters as `parse`, minus `output`. Returns a `Job` without waiting.
+
+#### `Job` properties
+
+| Property | Type | Description |
+|---|---|---|
+| `id` | `str` | Unique job identifier |
+| `processing_status` | `str` | `pending` / `processing` / `completed` / `failed` |
+| `result_format` | `str` | Output format |
+| `is_completed` | `bool` | True when result is ready |
+| `is_failed` | `bool` | True if job failed |
+| `metadata` | `DocumentMetadata` | Filename, page count, language, etc. |
+
+---
+
+## Notebook Integration
+
+Results are automatically rendered when running in Jupyter:
+
+- **`md`** → rendered Markdown
+- **`html`** → rendered HTML
+- **`json`** → interactive tree
+- **`txt`** → code block
+
+To disable auto-display, pass `output="file.md"`.
 
 ---
 
-## Requirements
+## Resources
 
-* Python 3.8+
-* `requests`
-
----
-
-## About ByteIT
-
-ByteIT provides document parsing and data extraction APIs designed for backend systems and automation workflows.
-
-Website: [https://byteit.ai](https://byteit.ai)
+- **Studio:** [studio.byteit.ai](https://studio.byteit.ai) — Process and test with a graphical user interface.
+- **Colab notebook:** [Quick demo](https://colab.research.google.com/drive/1mxto7MGFVqLTbGKeSvHBSUCMvN3FZ8Uw?usp=sharing)
+- **Pricing:** [byteit.ai/pricing](https://byteit.ai/pricing) — 1,000 free credits
+- **Support:** [byteit.ai/support](https://byteit.ai/support)
+- **LinkedIn:** [ByteIT on LinkedIn](https://www.linkedin.com/company/byteit-ai)
 
 ---
 
-## License
-
-This project is licensed under the terms specified in the [LICENSE](LICENSE) file.
-
-© 2026 ByteIT GmbH
-
----
+Licensed under [Apache 2.0](LICENSE). © 2026 ByteIT GmbH.

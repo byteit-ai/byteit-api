@@ -1,19 +1,18 @@
-"""Simplified ByteIT API client - clean and minimal."""
+"""ByteIT API client."""
 
 import json
 import time
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Dict, List, Optional, Type, Union
+from typing import Any
 
 import requests
 
-
 from .connectors import (
-    LocalFileOutputConnector,
     InputConnector,
-    OutputConnector,
     LocalFileInputConnector,
+    LocalFileOutputConnector,
+    OutputConnector,
 )
 from .exceptions import (
     APIKeyError,
@@ -27,6 +26,7 @@ from .exceptions import (
 )
 from .models.Job import Job
 from .models.JobList import JobList
+from .models.ProcessingOptions import ProcessingOptions
 from .progress import ProgressTracker
 
 # API configuration
@@ -36,19 +36,28 @@ JOBS_PATH = "jobs"
 
 
 class ByteITClient:
-    """
-    Simple client for ByteIT document parsing.
+    """Client for ByteIT document parsing.
+
+    Provides both synchronous and asynchronous document parsing workflows.
 
     Methods:
-        - parse(): Parse a document and get the result
-        - get_all_jobs(): Get all your jobs
-        - get_job_by_id(): Get a specific job
-        - get_result(): Download a job result
+        parse(input, ...):           Parse a document and wait for the result.
+        parse_async(input, ...):     Submit a document for parsing, return.
+        get_job_status(job_id):      Check the processing status of a job.
+        get_job_result(job_id):      Download the result of a completed job.
+        get_jobs():                  List all jobs for your account.
 
-    Example:
-        client = ByteITClient(api_key="your_key")
-        result = client.parse("document.pdf")  # Returns bytes
-        client.parse("doc.pdf", output="result.txt")  # Saves to file
+    Examples:
+        Synchronous (blocking)::
+
+            client = ByteITClient(api_key="your_key") result =
+            client.parse("document.pdf")
+
+        Asynchronous (non-blocking)::
+
+            job = client.parse_async("document.pdf") # ... do other work ...
+            status = client.get_job_status(job.id) if status.is_completed:
+                result = client.get_job_result(job.id)
     """
 
     # BASE_URL = "https://api.byteit.ai"
@@ -57,8 +66,7 @@ class ByteITClient:
     DEFAULT_TIMEOUT = 60 * 30  # 30 minutes
 
     def __init__(self, api_key: str):
-        """
-        Initialize the ByteIT client.
+        """Initialize the ByteIT client.
 
         Args:
             api_key: Your ByteIT API key
@@ -77,51 +85,35 @@ class ByteITClient:
 
     def parse(
         self,
-        input: Union[str, Path, InputConnector],
-        output: Union[None, str, Path] = None,
+        input: str | Path | InputConnector,
+        output: None | str | Path = None,
+        processing_options: ProcessingOptions | dict | None = None,
         result_format: str = "md",
     ) -> bytes:
-        """
-        Parse a document and wait for the result.
+        """Parse a document and wait for the result.
+
+        Submits the document, polls until processing completes, and returns
+        the parsed content. For non-blocking usage, see :meth:`parse_async`.
 
         Args:
-            input: File to parse. Can be:
-                - str or Path: Local file path
-                - InputConnector: For S3 or custom sources
-            result_format: "txt", "json", "md", or "html" (default: "txt")
-            output: Where to save result (optional). Can be:
-                - None: Return result as bytes (default)
-                - str or Path: Save to local file
+            input: File path (str/Path) or InputConnector.
+            output: Optional file path to save the result to disk.
+            processing_options: ProcessingOptions or dict with keys:
+                ``languages`` (list[str]), ``page_range`` (str).
+            result_format: Output format: ``"txt"``, ``"json"``, ``"md"``,
+                or ``"html"`` (default: ``"md"``).
 
         Returns:
-            Parsed content as bytes
+            Parsed content as bytes.
 
-        Example:
-            # Simple - returns bytes
+        Example::
+
             result = client.parse("document.pdf")
-
-            # Save to file
-            client.parse("doc.pdf", output="result.txt")
-
-            # S3 input (use connector)
-            from byteit.connectors import S3InputConnector
-            result = client.parse(S3InputConnector("my-bucket", "file.pdf"))
-
-            # Different format
-            json_result = client.parse("doc.pdf", result_format="json")
+            client.parse("doc.pdf", output="result.md")
+            client.parse("doc.pdf", result_format="json")
         """
-        print("Starting document parsing...")
-        # Convert input to connector as early as possible
-        input_connector = self._to_input_connector(input)
-
-        # Convert output to connector if provided
-        output_connector = self._to_output_connector(output)
-
-        # Create job and wait
-        job = self._create_job(
-            input_connector=input_connector,
-            output_connector=output_connector,
-            result_format=result_format,
+        job, input_connector = self._submit_job(
+            input, processing_options, result_format, output
         )
         print(f"Job {job.id} created. Waiting for completion...")
         self._wait_for_completion(job.id, input_connector=input_connector)
@@ -131,62 +123,126 @@ class ByteITClient:
 
         # If output is a file path, save it
         if isinstance(output, (str, Path)):
-            output_path = Path(output)
-            output_path.write_bytes(result_bytes)
+            Path(output).write_bytes(result_bytes)
         elif output is None:
-            # Try to display in notebook if available
             self._try_display_result(result_bytes, result_format)
 
         return result_bytes
 
-    def get_all_jobs(self) -> List[Job]:
-        """
-        Get all jobs for your account.
+    def parse_async(
+        self,
+        input: str | Path | InputConnector,
+        processing_options: ProcessingOptions | dict | None = None,
+        result_format: str = "md",
+    ) -> Job:
+        """Submit a document for parsing and return immediately.
+
+        Use this for non-blocking workflows. Check progress with
+        :meth:`get_job_status` and retrieve results with :meth:`get_job_result`.
+
+        Args:
+            input: File path (str/Path) or InputConnector.
+            processing_options: ProcessingOptions or dict with keys:
+                ``languages`` (list[str]), ``page_range`` (str).
+            result_format: Output format: ``"txt"``, ``"json"``, ``"md"``,
+                or ``"html"`` (default: ``"md"``).
 
         Returns:
-            List of Job objects
+            Job object with ``id``, ``processing_status``, and other metadata.
 
-        Example:
-            jobs = client.get_all_jobs()
-            for job in jobs:
+        Example::
+
+            job = client.parse_async("document.pdf")
+            # ... do other work ...
+            status = client.get_job_status(job.id)
+            if status.is_completed:
+                result = client.get_job_result(job.id)
+        """
+        job, _ = self._submit_job(input, processing_options, result_format)
+        print(f"Job {job.id} submitted.")
+        return job
+
+    def get_jobs(self) -> list[Job]:
+        """List all jobs for your account.
+
+        Returns:
+            List of Job objects.
+
+        Example::
+
+            for job in client.get_jobs():
                 print(f"{job.id}: {job.processing_status}")
         """
         job_list = self._list_jobs()
         return job_list.jobs
 
-    def get_job_by_id(self, job_id: str) -> Job:
-        """
-        Get a specific job by ID.
+    def get_job_status(self, job_id: str) -> Job:
+        """Check the processing status of a job.
 
         Args:
-            job_id: The job ID
+            job_id: The job ID.
 
         Returns:
-            Job object
+            Job object with current status and metadata.
 
-        Example:
-            job = client.get_job_by_id("job_123")
+        Example::
+
+            job = client.get_job_status("job_123")
+            if job.is_completed:
+                result = client.get_job_result(job.id)
         """
         return self._get_job_status(job_id)
 
-    def get_result(self, job_id: str) -> bytes:
-        """
-        Download result for a completed job.
+    def get_job_result(self, job_id: str) -> bytes:
+        """Download the result of a completed job.
 
         Args:
-            job_id: The job ID
+            job_id: The job ID.
 
         Returns:
-            Result as bytes
+            Parsed content as bytes.
 
         Raises:
-            JobProcessingError: If job is not completed
+            JobProcessingError: If the job has not completed yet.
+
+        Example::
+
+            result = client.get_job_result("job_123")
+            with open("output.md", "wb") as f:
+                f.write(result)
         """
         return self._download_result(job_id)
 
+    # ==================== JOB SUBMISSION ====================
+
+    def _submit_job(
+        self,
+        input: str | Path | InputConnector,
+        processing_options: ProcessingOptions | dict | None = None,
+        result_format: str = "md",
+        output: None | str | Path = None,
+    ) -> tuple[Job, InputConnector]:
+        """Validate inputs, build connectors, and create a job.
+
+        Shared by :meth:`parse` and :meth:`parse_async`.
+        """
+        if isinstance(processing_options, dict):
+            processing_options = ProcessingOptions.from_dict(processing_options)
+
+        input_connector = self._to_input_connector(input)
+        output_connector = self._to_output_connector(output)
+
+        job = self._create_job(
+            input_connector=input_connector,
+            output_connector=output_connector,
+            processing_options=processing_options,
+            result_format=result_format,
+        )
+        return job, input_connector
+
     # ==================== CONNECTOR CONVERTERS ====================
 
-    def _to_input_connector(self, input: Union[str, Path, InputConnector]) -> InputConnector:
+    def _to_input_connector(self, input: str | Path | InputConnector) -> InputConnector:
         """Convert various input types to InputConnector."""
         # Already a connector (checks for InputConnector or its subclasses)
         if isinstance(input, InputConnector):
@@ -195,10 +251,10 @@ class ByteITClient:
         # String or Path - local file
         if not isinstance(input, (str, Path)):
             raise ValidationError(f"Unsupported input type: {type(input).__name__}")
-        
+
         return LocalFileInputConnector(file_path=str(input))
 
-    def _to_output_connector(self, output: Union[None, str, Path]):
+    def _to_output_connector(self, output: None | str | Path):  # noqa: ARG002
         """Convert output specification to OutputConnector."""
         # Always use ByteIT storage (simplest approach)
         # If output is a file path, we download and save after completion
@@ -211,14 +267,19 @@ class ByteITClient:
         input_connector: InputConnector,
         output_connector: OutputConnector,
         result_format: str,
+        processing_options: ProcessingOptions | None = None,
     ) -> Job:
         """Create a processing job."""
-        connector_type = input_connector.to_dict().get("type", "localfile").strip().lower()
+        connector_type = (
+            input_connector.to_dict().get("type", "localfile").strip().lower()
+        )
 
         # Build base request data
-        data: Dict[str, Any] = {
+        data: dict[str, Any] = {
             "output_format": result_format,
-            "processing_options": json.dumps({}),
+            "processing_options": json.dumps(
+                processing_options.to_dict() if processing_options else {}
+            ),
             "input_connector": connector_type,
         }
 
@@ -230,7 +291,7 @@ class ByteITClient:
         )
 
         # Prepare input based on type
-        files: Optional[Dict[str, Any]] = None
+        files: dict[str, Any] | None = None
         file_obj = None
 
         if connector_type == "localfile":
@@ -244,7 +305,9 @@ class ByteITClient:
 
         # Make request with cleanup
         try:
-            response = self._request("POST", f"{API_BASE}/{JOBS_PATH}/", files=files, data=data)
+            response = self._request(
+                "POST", f"{API_BASE}/{JOBS_PATH}/", files=files, data=data
+            )
         finally:
             if file_obj and hasattr(file_obj, "close") and not file_obj.closed:
                 file_obj.close()
@@ -273,7 +336,7 @@ class ByteITClient:
         )
 
     def _wait_for_completion(
-        self, job_id: str, input_connector: Optional[InputConnector] = None
+        self, job_id: str, input_connector: InputConnector | None = None
     ) -> Job:
         """Wait for job to complete with adaptive polling: MIN(1*1.5^(x-1), 10)."""
         tracker = ProgressTracker(input_connector)
@@ -289,7 +352,9 @@ class ByteITClient:
 
             if job.is_failed:
                 tracker.close()
-                raise JobProcessingError(f"Job failed: {job.processing_error or 'Unknown error'}")
+                raise JobProcessingError(
+                    f"Job failed: {job.processing_error or 'Unknown error'}"
+                )
 
             poll_interval = min(1 * (1.5 ** (iteration - 1)), 10)
             time.sleep(poll_interval)
@@ -325,14 +390,14 @@ class ByteITClient:
         """Build full URL."""
         return f"{self.BASE_URL}/{path.lstrip('/')}"
 
-    def _request(self, method: str, path: str, **kwargs: Any) -> Dict[str, Any]:
+    def _request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
         """Make HTTP request."""
         url = self._build_url(path)
         kwargs.setdefault("timeout", self.DEFAULT_TIMEOUT)
         response = self._session.request(method, url, **kwargs)
         return self._handle_response(response)
 
-    def _handle_response(self, response: requests.Response) -> Dict[str, Any]:
+    def _handle_response(self, response: requests.Response) -> dict[str, Any]:
         """Handle API response and raise appropriate exceptions."""
         # Success path
         if response.status_code in (200, 201):
@@ -340,15 +405,17 @@ class ByteITClient:
 
         # Error path - extract details
         try:
-            data: Dict[str, Any] = response.json() if response.content else {}
+            data: dict[str, Any] = response.json() if response.content else {}
             message: str = data.get("detail", "") or response.text or "Request failed"
         except (ValueError, requests.exceptions.JSONDecodeError):
             # Response is not JSON (e.g., HTML error page)
             data = {}
-            message = response.text or f"Request failed with status {response.status_code}"
+            message = (
+                response.text or f"Request failed with status {response.status_code}"
+            )
 
         # Map status to exception
-        ERROR_MAP: Dict[int, Type[Exception]] = {
+        ERROR_MAP: dict[int, type[Exception]] = {  # noqa: N806
             400: ValidationError,
             401: AuthenticationError,
             403: APIKeyError,
@@ -356,7 +423,7 @@ class ByteITClient:
             429: RateLimitError,
         }
 
-        ExceptionClass = ERROR_MAP.get(response.status_code)
+        ExceptionClass = ERROR_MAP.get(response.status_code)  # noqa: N806
         if ExceptionClass:
             raise ExceptionClass(message, response.status_code, data)
 
@@ -369,20 +436,21 @@ class ByteITClient:
         """Try to display result in notebook environment."""
         try:
             # Check if we're in a notebook environment
-            from IPython.display import display, JSON, Markdown, HTML
-            
-            content = result_bytes.decode('utf-8', errors='replace')
-            
-            if result_format == 'json':
+            from IPython.display import HTML, JSON, Markdown, display
+
+            content = result_bytes.decode("utf-8", errors="replace")
+
+            if result_format == "json":
                 import json
+
                 try:
                     data = json.loads(content)
                     display(JSON(data, expanded=True))
                 except json.JSONDecodeError:
                     display(Markdown(f"```json\n{content}\n```"))
-            elif result_format == 'md':
+            elif result_format == "md":
                 display(Markdown(content))
-            elif result_format == 'html':
+            elif result_format == "html":
                 display(HTML(content))
             else:  # txt or unknown
                 display(Markdown(f"```\n{content}\n```"))
@@ -402,9 +470,9 @@ class ByteITClient:
 
     def __exit__(
         self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> None:
         """Context manager exit."""
         self.close()

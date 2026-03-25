@@ -1,0 +1,22 @@
+* @adofersan @StefanStefanov741
+
+# CI/CD Infrastructure and Security
+# Unauthorized changes here could bypass security checks or break deployments
+.github/workflows/      @adofersan
+.github/CODEOWNERS      @adofersan
+scripts/ci/             @adofersan
+
+# Linting, Formatting, and Quality Gates
+# Controls Ruff, pre-commit, and general project standards
+.pre-commit-config.yaml @adofersan
+ruff.toml               @adofersan
+pyproject.toml          @adofersan
+.editorconfig           @adofersan
+
+# Dependency Management and Environment
+# Prevents unvetted packages or environment changes
+requirements.txt        @adofersan
+poetry.lock             @adofersan
+.env                    @adofersan
+.env.example            @adofersan
+.gitignore              @adofersan

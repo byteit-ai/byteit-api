@@ -5,11 +5,10 @@ They are skipped by default - use pytest -m integration to run them.
 """
 
 import os
-import pytest
-from pathlib import Path
-from byteit import ByteITClient
-from byteit.connectors import LocalFileInputConnector
 
+import pytest
+
+from byteit import ByteITClient
 
 # Skip integration tests by default
 pytestmark = pytest.mark.integration
@@ -43,7 +42,7 @@ class TestIntegrationParse:
 
     def test_parse_local_file(self, client, sample_file):
         """Parse a local file end-to-end."""
-        result = client.parse(str(sample_file), output_format="txt")
+        result = client.parse(str(sample_file), result_format="txt")
 
         assert isinstance(result, bytes)
         assert len(result) > 0
@@ -53,7 +52,7 @@ class TestIntegrationParse:
         output_file = tmp_path / "output.txt"
 
         result = client.parse(
-            str(sample_file), output_format="txt", output=str(output_file)
+            str(sample_file), result_format="txt", output=str(output_file)
         )
 
         assert isinstance(result, bytes)
@@ -65,7 +64,7 @@ class TestIntegrationParse:
         formats = ["txt", "json", "md", "html"]
 
         for fmt in formats:
-            result = client.parse(str(sample_file), output_format=fmt)
+            result = client.parse(str(sample_file), result_format=fmt)
             assert isinstance(result, bytes)
             assert len(result) > 0
 
@@ -73,20 +72,20 @@ class TestIntegrationParse:
 class TestIntegrationJobs:
     """Integration tests for job management."""
 
-    def test_get_all_jobs(self, client):
+    def test_get_jobs(self, client):
         """List all jobs."""
-        jobs = client.get_all_jobs()
+        jobs = client.get_jobs()
         assert isinstance(jobs, list)
 
-    def test_get_job_by_id(self, client, sample_file):
+    def test_get_job_status(self, client, sample_file):
         """Get specific job by ID."""
         # Create a job first
-        result = client.parse(str(sample_file))
+        result = client.parse(str(sample_file))  # noqa: F841
 
         # Get all jobs and find the one we just created
-        jobs = client.get_all_jobs()
+        jobs = client.get_jobs()
         if jobs:
-            job = client.get_job_by_id(jobs[0].id)
+            job = client.get_job_status(jobs[0].id)
             assert job.id == jobs[0].id
 
 

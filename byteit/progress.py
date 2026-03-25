@@ -4,7 +4,7 @@ import random
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Protocol
+from typing import Protocol
 
 from tqdm import tqdm
 
@@ -14,14 +14,11 @@ from .connectors import InputConnector, LocalFileInputConnector
 class ProgressBar(Protocol):
     """Protocol for progress bar implementations."""
 
-    def set_description(self, desc: str) -> None:
-        ...
+    def set_description(self, desc: str) -> None: ...  # noqa: D102
 
-    def update(self, n: float) -> None:
-        ...
+    def update(self, n: float) -> None: ...  # noqa: D102
 
-    def close(self) -> None:
-        ...
+    def close(self) -> None: ...  # noqa: D102
 
 
 @dataclass
@@ -31,15 +28,15 @@ class ProgressState:
     estimated_seconds: float
     start_time: float
     last_progress: float
-    known_pages: Optional[int]
+    known_pages: int | None
 
 
 class ProgressTracker:
     """Track and display progress while processing a document."""
 
-    def __init__(
+    def __init__(  # noqa: D107
         self,
-        input_connector: Optional[InputConnector] = None,
+        input_connector: InputConnector | None = None,
         progress_bar_factory=tqdm,
         time_provider=time.time,
     ) -> None:
@@ -57,7 +54,8 @@ class ProgressTracker:
             baseline = 85.0
         self._state = ProgressState(
             estimated_seconds=max(
-                baseline, self._estimate_processing_seconds(self._input_extension, None)
+                baseline,
+                self._estimate_processing_seconds(self._input_extension, None),
             ),
             start_time=self._time_provider(),
             last_progress=0.0,
@@ -68,7 +66,11 @@ class ProgressTracker:
         """Update progress based on job status."""
         metadata = getattr(job, "metadata", None)
         page_count = getattr(metadata, "page_count", None) if metadata else None
-        if page_count and isinstance(page_count, int) and page_count != self._state.known_pages:
+        if (
+            page_count
+            and isinstance(page_count, int)
+            and page_count != self._state.known_pages
+        ):
             self._state.known_pages = page_count
             if self._input_extension == "pdf":
                 # PDF: baseline 85s + 6-8s por página
@@ -81,9 +83,7 @@ class ProgressTracker:
 
         elapsed = self._time_provider() - self._state.start_time
         if self._state.estimated_seconds > 0:
-            target_progress = min(
-                90.0, (elapsed / self._state.estimated_seconds) * 90.0
-            )
+            target_progress = min(90.0, (elapsed / self._state.estimated_seconds) * 90.0)
         else:
             target_progress = 90.0
 
@@ -93,7 +93,7 @@ class ProgressTracker:
             self._state.last_progress = target_progress
 
     def finalize(self) -> None:
-        """Finalize progress at completion. If finished too fast (PDF), smooth bar to 100%."""
+        """Finalize progress at completion. If finished too fast (PDF), smooth bar to 100%."""  # noqa: E501
         # If PDF and finished much faster than baseline, smooth the last part
         if self._input_extension == "pdf":
             elapsed = self._time_provider() - self._state.start_time
@@ -103,19 +103,25 @@ class ProgressTracker:
                 if remaining > 0:
                     steps = 40
                     step = remaining / steps
-                    for i in range(steps):
-                        self._bar.set_description("Download")
+                    for i in range(steps):  # noqa: B007
+                        self._bar.set_description(
+                            "Delayed due to high load. Wait or check later with get_job_result(job_id)."  # noqa: E501
+                        )
                         self._bar.update(step)
                         self._state.last_progress += step
                         time.sleep(2.0 / steps)
                     self._state.last_progress = 100.0
-                    self._bar.set_description("Download")
+                    self._bar.set_description(
+                        "Delayed due to high load. Wait or check later with get_job_result(job_id)."  # noqa: E501
+                    )
                     self._bar.n = 100
                     self._bar.refresh()
                     self._bar.close()
                     return
         if self._state.last_progress < 100:
-            self._bar.set_description("Download")
+            self._bar.set_description(
+                "Delayed due to high load. Wait or check later with get_job_result(job_id)."  # noqa: E501
+            )
             self._bar.update(100 - self._state.last_progress)
             self._state.last_progress = 100.0
         self._bar.close()
@@ -124,7 +130,7 @@ class ProgressTracker:
         """Close progress bar without finalizing."""
         self._bar.close()
 
-    def _get_input_extension(self, input_connector: Optional[InputConnector]) -> str:
+    def _get_input_extension(self, input_connector: InputConnector | None) -> str:
         """Get lowercase file extension from input connector if available."""
         if input_connector is None:
             return ""
@@ -139,7 +145,7 @@ class ProgressTracker:
         return ""
 
     def _estimate_processing_seconds(
-        self, file_extension: str, page_count: Optional[int]
+        self, file_extension: str, page_count: int | None
     ) -> float:
         """Estimate processing time for progress simulation."""
         extension = (file_extension or "").lower()
@@ -157,11 +163,13 @@ class ProgressTracker:
     def _progress_message(self, progress: float) -> str:
         """Select grounded progress messages by phase."""
         if progress < 10:
-            return "Upload"
+            return "Initialising"
         if progress < 25:
             return "Preprocessing"
         if progress < 70:
             return "Parsing"
         if progress < 90:
             return "Post-processing"
-        return "Download"
+        return (
+            "Delayed due to high load. Wait or check later with get_job_result(job_id)."
+        )

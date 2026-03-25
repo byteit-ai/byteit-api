@@ -1,11 +1,10 @@
 """Tests for model classes."""
 
 from datetime import datetime
-import pytest
 
+from byteit.models.DocumentMetadata import DocumentMetadata
 from byteit.models.Job import Job
 from byteit.models.JobList import JobList
-from byteit.models.DocumentMetadata import DocumentMetadata
 from byteit.models.ProcessingOptions import ProcessingOptions
 
 

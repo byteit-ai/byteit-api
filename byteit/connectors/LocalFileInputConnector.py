@@ -1,7 +1,7 @@
 """Local file input connector for ByteIT."""
 
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any
 
 from .base import InputConnector
 
@@ -25,8 +25,7 @@ class LocalFileInputConnector(InputConnector):
     """
 
     def __init__(self, file_path: str):
-        """
-        Initialize local file input connector.
+        """Initialize local file input connector.
 
         Args:
             file_path: Path to the local file to upload
@@ -41,18 +40,16 @@ class LocalFileInputConnector(InputConnector):
         if not self.file_path.is_file():
             raise ValueError(f"Path is not a file: {self.file_path}")
 
-    def get_file_data(self) -> Tuple[str, Any]:
-        """
-        Get file data for upload.
+    def get_file_data(self) -> tuple[str, Any]:
+        """Get file data for upload.
 
         Returns:
             Tuple of (filename, file_object)
         """
         return (self.file_path.name, open(self.file_path, "rb"))
 
-    def to_dict(self) -> Dict[str, Any]:
-        """
-        Convert to dictionary representation.
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary representation.
 
         Returns:
             Dictionary with connector type and configuration

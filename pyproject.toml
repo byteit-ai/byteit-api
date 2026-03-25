@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "byteit"
-version = "0.1.2"
+version = "1.0.0"
 description = "AI-powered document intelligence platform - Turn your data into structured data with a single line of code."
 readme = "README.md"
 requires-python = ">=3.8"
@@ -46,10 +46,6 @@ dependencies = [
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
-    "black>=23.0.0",
-    "isort>=5.0.0",
-    "flake8>=6.0.0",
-    "mypy>=1.0.0"
 ]
 
 [project.urls]
@@ -75,19 +71,3 @@ markers = [
     "integration: integration tests that require API credentials",
 ]
 addopts = "-v --tb=short"
-
-[tool.black]
-line-length = 100
-target-version = ["py38"]
-
-[tool.isort]
-profile = "black"
-line_length = 100
-skip_gitignore = true
-
-[tool.mypy]
-python_version = "3.8"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = false
-disallow_incomplete_defs = false

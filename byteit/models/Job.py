@@ -2,7 +2,8 @@
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, Optional, cast
+from typing import Any, cast
+
 from byteit.models.DocumentMetadata import DocumentMetadata
 from byteit.models.ProcessingOptions import ProcessingOptions
 
@@ -47,21 +48,21 @@ class Job:
     updated_at: datetime
     processing_status: str
     result_format: str
-    owner_user_id: Optional[str] = None
-    file_data: Optional[str] = None
-    file_hash: Optional[str] = None
-    nickname: Optional[str] = None
-    metadata: Optional[DocumentMetadata] = None
-    processing_options: Optional[ProcessingOptions] = None
-    processing_error: Optional[str] = None
-    storage_path: Optional[str] = None
-    result_path: Optional[str] = None
-    input_connector: Optional[str] = None
-    input_connection_data: Optional[Dict[str, Any]] = None
-    output_connector: Optional[str] = None
-    output_connection_data: Optional[Dict[str, Any]] = None
-    started_processing_at: Optional[datetime] = None
-    finished_processing_at: Optional[datetime] = None
+    owner_user_id: str | None = None
+    file_data: str | None = None
+    file_hash: str | None = None
+    nickname: str | None = None
+    metadata: DocumentMetadata | None = None
+    processing_options: ProcessingOptions | None = None
+    processing_error: str | None = None
+    storage_path: str | None = None
+    result_path: str | None = None
+    input_connector: str | None = None
+    input_connection_data: dict[str, Any] | None = None
+    output_connector: str | None = None
+    output_connection_data: dict[str, Any] | None = None
+    started_processing_at: datetime | None = None
+    finished_processing_at: datetime | None = None
 
     @property
     def is_completed(self) -> bool:
@@ -79,7 +80,7 @@ class Job:
         return self.processing_status in ("pending", "processing")
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "Job":
+    def from_dict(cls, data: dict[str, Any]) -> "Job":
         """Create a Job instance from API response data."""
         # Parse datetime fields
         created_at = data.get("created_at")
@@ -109,7 +110,7 @@ class Job:
         # Parse metadata
         metadata = None
         if data.get("metadata") and isinstance(data["metadata"], dict):
-            metadata_dict = cast(Dict[str, Any], data["metadata"])
+            metadata_dict = cast(dict[str, Any], data["metadata"])
             try:
                 metadata = DocumentMetadata(
                     original_filename=metadata_dict.get("original_filename", ""),
