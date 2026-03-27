@@ -2,7 +2,10 @@
 
 from datetime import datetime
 
+import pytest
+
 from byteit.models.DocumentMetadata import DocumentMetadata
+from byteit.models.ExtractionType import ExtractionType
 from byteit.models.Job import Job
 from byteit.models.JobList import JobList
 from byteit.models.ProcessingOptions import ProcessingOptions
@@ -128,12 +131,29 @@ class TestProcessingOptions:
 
         assert options.languages == ["en"]
         assert options.page_range == ""
+        assert options.extraction_type is ExtractionType.AUTO
 
     def test_to_dict(self):
         """to_dict serializes options."""
-        options = ProcessingOptions(languages=["en", "es"], page_range="1-5")
+        options = ProcessingOptions(
+            languages=["en", "es"],
+            page_range="1-5",
+            extraction_type=ExtractionType.COMPLEX,
+        )
 
         result = options.to_dict()
 
         assert result["languages"] == ["en", "es"]
         assert result["page_range"] == "1-5"
+        assert result["extraction_type"] == "complex"
+
+    def test_from_dict_parses_extraction_type(self):
+        """from_dict converts extraction_type strings into enums."""
+        options = ProcessingOptions.from_dict({"extraction_type": "complex"})
+
+        assert options.extraction_type is ExtractionType.COMPLEX
+
+    def test_invalid_extraction_type_raises_error(self):
+        """Invalid extraction type values are rejected."""
+        with pytest.raises(ValueError, match="Invalid extraction type"):
+            ProcessingOptions(extraction_type="invalid")

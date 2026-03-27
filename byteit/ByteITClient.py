@@ -99,7 +99,8 @@ class ByteITClient:
             input: File path (str/Path) or InputConnector.
             output: Optional file path to save the result to disk.
             processing_options: ProcessingOptions or dict with keys:
-                ``languages`` (list[str]), ``page_range`` (str).
+                ``languages`` (list[str]), ``page_range`` (str), and
+                ``extraction_type`` (str or ExtractionType).
             result_format: Output format: ``"txt"``, ``"json"``, ``"md"``,
                 or ``"html"`` (default: ``"md"``).
 
@@ -143,7 +144,8 @@ class ByteITClient:
         Args:
             input: File path (str/Path) or InputConnector.
             processing_options: ProcessingOptions or dict with keys:
-                ``languages`` (list[str]), ``page_range`` (str).
+                ``languages`` (list[str]), ``page_range`` (str), and
+                ``extraction_type`` (str or ExtractionType).
             result_format: Output format: ``"txt"``, ``"json"``, ``"md"``,
                 or ``"html"`` (default: ``"md"``).
 

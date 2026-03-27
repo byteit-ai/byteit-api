@@ -498,10 +498,22 @@ class TestSubmitJob:
         client._submit_job("test.pdf", {"languages": ["de"]}, "json")
 
         call_kwargs = mock_create.call_args[1]
+        from byteit.models.ExtractionType import ExtractionType
         from byteit.models.ProcessingOptions import ProcessingOptions
 
         assert isinstance(call_kwargs["processing_options"], ProcessingOptions)
         assert call_kwargs["processing_options"].languages == ["de"]
+
+        client._submit_job(
+            "test.pdf",
+            {"extraction_type": "complex"},
+            "json",
+        )
+
+        call_kwargs = mock_create.call_args[1]
+        assert call_kwargs["processing_options"].extraction_type is (
+            ExtractionType.COMPLEX
+        )
 
 
 class TestContextManager:

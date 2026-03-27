@@ -19,6 +19,7 @@ from .exceptions import (
     ValidationError,
 )
 from .models.DocumentMetadata import DocumentMetadata
+from .models.ExtractionType import ExtractionType
 from .models.Job import Job
 from .models.JobList import JobList
 from .models.OutputFormat import OutputFormat
@@ -42,6 +43,7 @@ __all__ = [
     "JobList",
     "DocumentMetadata",
     "ProcessingOptions",
+    "ExtractionType",
     "OutputFormat",
     "InputConnector",
     "OutputConnector",
