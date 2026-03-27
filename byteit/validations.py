@@ -4,17 +4,19 @@ from typing import Any
 
 from .exceptions import ValidationError
 
-# Valid processing option fields (only languages and page_range are allowed)
+# Valid processing option fields accepted by the API.
 VALID_PROCESSING_OPTIONS: set[str] = {
     "languages",
     "page_range",
+    "image_annotations",
+    "table_enrichment",
+    "extraction_type",
 }
 
 
 def validate_processing_options(options: dict[str, Any]) -> None:
     """Validate processing options dictionary.
 
-    Only 'languages' and 'page_range' are allowed in processing_options.
     The 'output_format' should be passed as a top-level parameter, not
     inside processing_options.
 
