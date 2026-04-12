@@ -12,7 +12,7 @@ on:
 
 jobs:
   jira-guard:
-    uses: byteit-ai/github-workflows/.github/workflows/jira-guard.yml@main
+    uses: byteit-ai/.github/.github/workflows/jira-guard.yml@main
     secrets:
       JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
       JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
