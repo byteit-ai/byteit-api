@@ -13,40 +13,84 @@
 
 ## 1 · Global invariants
 
+### 1. Think Before Coding
+
+*Don't assume. Don't hide confusion. Surface tradeoffs.*
+
+Before implementing:
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them - don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
+
+### 2. Simplicity First
+
+*Minimum code that solves the problem. Nothing speculative.*
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
+
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+### 3. Surgical Changes
+
+*Touch only what you must. Clean up only your own mess.*
+
+When editing existing code:
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it - don't delete it.
+
+When your changes create orphans:
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
+
+The test: Every changed line should trace directly to the user's request.
+
+### 4. Goal-Driven Execution
+
+*Define success criteria. Loop until verified.*
+
+Transform tasks into verifiable goals:
+- "Add validation" → "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" → "Write a test that reproduces it, then make it pass"
+- "Refactor X" → "Ensure tests pass before and after"
+
+For multi-step tasks, state a brief plan:
+
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+
 **Stack** — suggest nothing outside this without being asked:
 - Python → [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html), enforced by `ruff`
 - TypeScript → [Google TS Style Guide](https://google.github.io/styleguide/tsguide.html), enforced by ESLint
 - Terraform → HashiCorp conventions
 
+Linters own style. Flag what they miss:
+- Complex conditionals that could be simplified or extracted.
+- Non-obvious intent — add a short *why* comment, not a *what* comment.
+- Missing error handling around I/O, network calls, external deps — no silent swallows.
+- Hardcoded secrets, unsanitized input in queries/commands, sensitive data in logs.
+- Duplicated logic that already exists elsewhere and should be reused.
+
+**Never flag:** linter-owned style, idiomatic patterns, micro-optimizations.
+
 **Code principles** — every change must move toward simplicity, clarity, maintainability:
-- Simplest solution that fully satisfies the requirement. No over-engineering.
 - Explicit over implicit. Readable over clever.
 - Flat over nested — extract conditions and loops into well-named functions.
 - Composition over inheritance.
 - Design for the next developer, not just the current task.
 
-**Enforce beyond linters** — ruff/ESLint own style; focus on what they miss:
-- Flag complex conditionals that could be simplified or extracted.
-- Flag non-obvious intent — add a short *why* comment, not a *what* comment.
-- Flag missing error handling around I/O, network calls, external deps — no silent swallows.
-- Flag hardcoded secrets, unsanitized input in queries/commands, sensitive data in logs.
-- Flag duplicated logic that already exists elsewhere and should be reused.
+**Off-limits without explicit scope:** auth/token/session, DB migrations or schema files, CI/CD workflow files.
 
-**Never flag:**
-- Style already enforced by ruff or ESLint.
-- Idiomatic language patterns that are correct but unfamiliar.
-- Micro-optimizations with no impact on scalability or readability.
-
-**Do not touch without explicit task scope:**
-- Auth, token handling, session management.
-- DB migrations or schema files.
-- CI/CD workflow files.
-- Any file not referenced in the current task.
-
-**Tone:**
-- Direct. Reference exact file + line. One sentence per issue.
-- No praise, no filler, no generic suggestions.
-- If code is correct and clear, say nothing.
+**Tone:** Direct. Exact file + line. One sentence per issue. No praise or filler. Silence if code is correct and clear.
 
 ---
 
