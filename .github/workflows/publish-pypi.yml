@@ -98,3 +98,15 @@ jobs:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
         run: twine upload dist/*
+
+      - name: "📋 Summary"
+        run: |
+          {
+            echo "## 📦 PyPI — Published"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| Version | \`${{ steps.tag.outputs.version }}\` |"
+            echo "| Tag | \`${{ github.ref_name }}\` |"
+            echo "| Status | ✅ Published to PyPI |"
+          } >> "$GITHUB_STEP_SUMMARY"

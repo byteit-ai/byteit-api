@@ -146,9 +146,19 @@ jobs:
           echo "✅ Tag v$VERSION is available"
 
       # ── Summary ──
-      - name: Summary
+      - name: "📋 Summary"
         run: |
-          echo ""
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "  Release ${{ steps.version.outputs.version }} is ready to merge"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "✅ Release ${{ steps.version.outputs.version }} is ready to merge"
+          {
+            echo "## 🚀 Release Readiness — v${{ steps.version.outputs.version }}"
+            echo ""
+            echo "| Check | Status |"
+            echo "|-------|--------|"
+            echo "| \`pyproject.toml\` version | ✅ \`${{ steps.version.outputs.version }}\` |"
+            echo "| \`__init__.py\` fallback | ✅ matches |"
+            echo "| CHANGELOG dated entry | ✅ present |"
+            echo "| \`[Unreleased]\` section | ✅ empty |"
+            echo "| Version bumped vs main | ✅ |"
+            echo "| Commit message | ✅ \`chore(release): ${{ steps.version.outputs.version }}\` |"
+            echo "| Tag \`v${{ steps.version.outputs.version }}\` | ✅ available |"
+          } >> "$GITHUB_STEP_SUMMARY"
