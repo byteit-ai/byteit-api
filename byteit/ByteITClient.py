@@ -89,7 +89,7 @@ class ByteITClient:
         input: str | Path | InputConnector,
         output: None | str | Path = None,
         processing_options: ProcessingOptions | dict | None = None,
-        result_format: OutputFormat = OutputFormat.MD,
+        result_format: str | OutputFormat = OutputFormat.MD,
     ) -> bytes:
         """Parse a document and wait for the result.
 
@@ -116,6 +116,7 @@ class ByteITClient:
             client.parse("doc.pdf", output="result.md")
             client.parse("doc.pdf", result_format=OutputFormat.JSON)
         """
+        result_format = self._to_output_format(result_format)
         job, input_connector = self._submit_job(
             input, processing_options, result_format, output
         )
@@ -137,7 +138,7 @@ class ByteITClient:
         self,
         input: str | Path | InputConnector,
         processing_options: ProcessingOptions | dict | None = None,
-        result_format: OutputFormat = OutputFormat.MD,
+        result_format: str | OutputFormat = OutputFormat.MD,
     ) -> Job:
         """Submit a document for parsing and return immediately.
 
@@ -165,6 +166,7 @@ class ByteITClient:
             if status.is_completed:
                 result = client.get_job_result(job.id)
         """
+        result_format = self._to_output_format(result_format)
         job, _ = self._submit_job(input, processing_options, result_format)
         print(f"Job {job.id} submitted.")
         return job
@@ -226,7 +228,7 @@ class ByteITClient:
         self,
         input: str | Path | InputConnector,
         processing_options: ProcessingOptions | dict | None = None,
-        result_format: OutputFormat = OutputFormat.MD,
+        result_format: str | OutputFormat = OutputFormat.MD,
         output: None | str | Path = None,
     ) -> tuple[Job, InputConnector]:
         """Validate inputs, build connectors, and create a job.
@@ -268,12 +270,26 @@ class ByteITClient:
         # If output is a file path, we download and save after completion
         return LocalFileOutputConnector()
 
-    def _to_output_format(self, result_format: OutputFormat) -> OutputFormat:
+    def _to_output_format(self, result_format: str | OutputFormat) -> OutputFormat:
         """Validate and normalize the requested output format."""
-        if not isinstance(result_format, OutputFormat):
-            raise ValidationError("result_format must be an instance of OutputFormat")
+        if isinstance(result_format, OutputFormat):
+            return result_format
 
-        return result_format
+        if isinstance(result_format, str):
+            normalized_result_format = result_format.strip().lower()
+            for output_format in OutputFormat:
+                if normalized_result_format in (
+                    output_format.value.lower(),
+                    output_format.name.lower(),
+                ):
+                    return output_format
+
+        supported_formats = ", ".join(
+            output_format.value for output_format in OutputFormat
+        )
+        raise ValidationError(
+            f"result_format must be an OutputFormat or one of: {supported_formats}"
+        )
 
     # ==================== INTERNAL METHODS ====================
 

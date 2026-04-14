@@ -371,6 +371,33 @@ class TestParse:
         assert result == b"parsed content"
         mock_display.assert_called_once_with(b"parsed content", OutputFormat.JSON)
 
+    @patch.object(ByteITClient, "_try_display_result")
+    @patch.object(ByteITClient, "_download_result")
+    @patch.object(ByteITClient, "_wait_for_completion")
+    @patch.object(ByteITClient, "_submit_job")
+    def test_parse_converts_string_result_format(
+        self,
+        mock_submit,
+        mock_wait,  # noqa: ARG002
+        mock_download,
+        mock_display,
+    ):
+        """Parse converts string result formats before continuing."""
+        client = ByteITClient("test_key")
+
+        mock_connector = Mock()
+        mock_job = Mock()
+        mock_job.id = "job_123"
+        mock_submit.return_value = (mock_job, mock_connector)
+
+        mock_download.return_value = b"parsed content"
+
+        result = client.parse("test.pdf", result_format="json")
+
+        assert result == b"parsed content"
+        mock_submit.assert_called_once_with("test.pdf", None, OutputFormat.JSON, None)
+        mock_display.assert_called_once_with(b"parsed content", OutputFormat.JSON)
+
     @patch.object(ByteITClient, "_download_result")
     @patch.object(ByteITClient, "_wait_for_completion")
     @patch.object(ByteITClient, "_submit_job")
@@ -436,6 +463,20 @@ class TestParseAsync:
         mock_submit.assert_called_once_with("test.pdf", opts, OutputFormat.JSON)
 
     @patch.object(ByteITClient, "_submit_job")
+    def test_parse_async_converts_string_result_format(self, mock_submit):
+        """parse_async converts string result formats before submission."""
+        client = ByteITClient("test_key")
+
+        mock_job = Mock(spec=Job)
+        mock_job.id = "job_456"
+        mock_submit.return_value = (mock_job, Mock())
+
+        result = client.parse_async("test.pdf", result_format="json")
+
+        assert result is mock_job
+        mock_submit.assert_called_once_with("test.pdf", None, OutputFormat.JSON)
+
+    @patch.object(ByteITClient, "_submit_job")
     def test_parse_async_does_not_wait(self, mock_submit):
         """parse_async doesn't call _wait_for_completion or _download_result."""
         client = ByteITClient("test_key")
@@ -456,15 +497,42 @@ class TestParseAsync:
 class TestSubmitJob:
     """Test _submit_job helper method."""
 
-    def test_submit_job_rejects_string_result_format(self):
-        """_submit_job requires an OutputFormat enum instance."""
+    def test_submit_job_converts_string_result_format(self):
+        """_submit_job converts string result formats to OutputFormat."""
+        client = ByteITClient("test_key")
+
+        with (
+            patch.object(client, "_to_input_connector") as mock_to_input,
+            patch.object(client, "_to_output_connector") as mock_to_output,
+            patch.object(client, "_create_job") as mock_create,
+        ):
+            mock_input_conn = Mock()
+            mock_output_conn = Mock()
+            mock_job = Mock(spec=Job)
+            mock_to_input.return_value = mock_input_conn
+            mock_to_output.return_value = mock_output_conn
+            mock_create.return_value = mock_job
+
+            job, input_conn = client._submit_job("test.pdf", None, "json")
+
+        assert job is mock_job
+        assert input_conn is mock_input_conn
+        mock_create.assert_called_once_with(
+            input_connector=mock_input_conn,
+            output_connector=mock_output_conn,
+            processing_options=None,
+            result_format=OutputFormat.JSON,
+        )
+
+    def test_submit_job_rejects_invalid_string_result_format(self):
+        """_submit_job rejects unsupported string result formats."""
         client = ByteITClient("test_key")
 
         with pytest.raises(
             ValidationError,
-            match="result_format must be an instance of OutputFormat",
+            match="result_format must be an OutputFormat or one of:",
         ):
-            client._submit_job("test.pdf", None, "json")
+            client._submit_job("test.pdf", None, "invalid-format")
 
     @patch.object(ByteITClient, "_create_job")
     @patch.object(ByteITClient, "_to_output_connector")
