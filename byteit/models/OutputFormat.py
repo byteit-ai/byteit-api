@@ -10,6 +10,7 @@ class OutputFormat(str, Enum):  # noqa: UP042
     JSON = "json"
     HTML = "html"
     MD = "md"
+    EXCEL = "zip"
 
     def __str__(self) -> str:
         """Return the string value of the format."""

@@ -18,6 +18,7 @@ from byteit.exceptions import (
     ValidationError,
 )
 from byteit.models.Job import Job
+from byteit.models.OutputFormat import OutputFormat
 
 
 class TestByteITClientInit:
@@ -196,7 +197,7 @@ class TestCreateJob:
         output_connector = Mock()
         output_connector.to_dict.return_value = {"type": "localfile"}
 
-        result = client._create_job(connector, output_connector, "txt")
+        result = client._create_job(connector, output_connector, OutputFormat.TXT)
 
         assert result == mock_job
         mock_request.assert_called_once()
@@ -227,7 +228,7 @@ class TestCreateJob:
         output_connector = Mock()
         output_connector.to_dict.return_value = {"type": "localfile"}
 
-        result = client._create_job(connector, output_connector, "json")
+        result = client._create_job(connector, output_connector, OutputFormat.JSON)
 
         assert isinstance(result, Job)
         assert result.id == "job_123"
@@ -340,7 +341,7 @@ class TestParse:
         result = client.parse("test.pdf")
 
         assert result == b"parsed content"
-        mock_submit.assert_called_once_with("test.pdf", None, "md", None)
+        mock_submit.assert_called_once_with("test.pdf", None, OutputFormat.MD, None)
         mock_wait.assert_called_once_with("job_123", input_connector=mock_connector)
         mock_download.assert_called_once_with("job_123")
 
@@ -365,10 +366,10 @@ class TestParse:
 
         mock_download.return_value = b"parsed content"
 
-        result = client.parse("test.pdf", result_format="json")
+        result = client.parse("test.pdf", result_format=OutputFormat.JSON)
 
         assert result == b"parsed content"
-        mock_display.assert_called_once_with(b"parsed content", "json")
+        mock_display.assert_called_once_with(b"parsed content", OutputFormat.JSON)
 
     @patch.object(ByteITClient, "_download_result")
     @patch.object(ByteITClient, "_wait_for_completion")
@@ -413,7 +414,7 @@ class TestParseAsync:
         result = client.parse_async("test.pdf")
 
         assert result is mock_job
-        mock_submit.assert_called_once_with("test.pdf", None, "md")
+        mock_submit.assert_called_once_with("test.pdf", None, OutputFormat.MD)
 
     @patch.object(ByteITClient, "_submit_job")
     def test_parse_async_with_options(self, mock_submit):
@@ -426,11 +427,13 @@ class TestParseAsync:
 
         opts = {"languages": ["de"], "page_range": "1-3"}
         result = client.parse_async(
-            "test.pdf", processing_options=opts, result_format="json"
+            "test.pdf",
+            processing_options=opts,
+            result_format=OutputFormat.JSON,
         )
 
         assert result is mock_job
-        mock_submit.assert_called_once_with("test.pdf", opts, "json")
+        mock_submit.assert_called_once_with("test.pdf", opts, OutputFormat.JSON)
 
     @patch.object(ByteITClient, "_submit_job")
     def test_parse_async_does_not_wait(self, mock_submit):
@@ -453,6 +456,16 @@ class TestParseAsync:
 class TestSubmitJob:
     """Test _submit_job helper method."""
 
+    def test_submit_job_rejects_string_result_format(self):
+        """_submit_job requires an OutputFormat enum instance."""
+        client = ByteITClient("test_key")
+
+        with pytest.raises(
+            ValidationError,
+            match="result_format must be an instance of OutputFormat",
+        ):
+            client._submit_job("test.pdf", None, "json")
+
     @patch.object(ByteITClient, "_create_job")
     @patch.object(ByteITClient, "_to_output_connector")
     @patch.object(ByteITClient, "_to_input_connector")
@@ -469,7 +482,7 @@ class TestSubmitJob:
         mock_to_output.return_value = mock_output_conn
         mock_create.return_value = mock_job
 
-        job, input_conn = client._submit_job("test.pdf", None, "md", None)
+        job, input_conn = client._submit_job("test.pdf", None, OutputFormat.MD, None)
 
         assert job is mock_job
         assert input_conn is mock_input_conn
@@ -479,7 +492,7 @@ class TestSubmitJob:
             input_connector=mock_input_conn,
             output_connector=mock_output_conn,
             processing_options=None,
-            result_format="md",
+            result_format=OutputFormat.MD,
         )
 
     @patch.object(ByteITClient, "_create_job")
@@ -495,7 +508,7 @@ class TestSubmitJob:
         mock_to_output.return_value = Mock()
         mock_create.return_value = Mock(spec=Job)
 
-        client._submit_job("test.pdf", {"languages": ["de"]}, "json")
+        client._submit_job("test.pdf", {"languages": ["de"]}, OutputFormat.JSON)
 
         call_kwargs = mock_create.call_args[1]
         from byteit.models.ExtractionType import ExtractionType
@@ -507,7 +520,7 @@ class TestSubmitJob:
         client._submit_job(
             "test.pdf",
             {"extraction_type": "complex"},
-            "json",
+            OutputFormat.JSON,
         )
 
         call_kwargs = mock_create.call_args[1]
@@ -598,7 +611,7 @@ class TestDisplayResult:
             sys.modules,
             {"IPython": mock_ipython, "IPython.display": mock_display_mod},
         ):
-            client._try_display_result(b'{"key": "value"}', "json")
+            client._try_display_result(b'{"key": "value"}', OutputFormat.JSON)
 
         mock_display_mod.display.assert_called_once()
         mock_display_mod.JSON.assert_called_once()
@@ -612,7 +625,7 @@ class TestDisplayResult:
             sys.modules,
             {"IPython": mock_ipython, "IPython.display": mock_display_mod},
         ):
-            client._try_display_result(b"# Header", "md")
+            client._try_display_result(b"# Header", OutputFormat.MD)
 
         mock_display_mod.display.assert_called_once()
         mock_display_mod.Markdown.assert_called_once()
@@ -626,7 +639,7 @@ class TestDisplayResult:
             sys.modules,
             {"IPython": mock_ipython, "IPython.display": mock_display_mod},
         ):
-            client._try_display_result(b"<h1>Header</h1>", "html")
+            client._try_display_result(b"<h1>Header</h1>", OutputFormat.HTML)
 
         mock_display_mod.display.assert_called_once()
         mock_display_mod.HTML.assert_called_once()
@@ -640,7 +653,7 @@ class TestDisplayResult:
             sys.modules,
             {"IPython": mock_ipython, "IPython.display": mock_display_mod},
         ):
-            client._try_display_result(b"Plain text", "txt")
+            client._try_display_result(b"Plain text", OutputFormat.TXT)
 
         mock_display_mod.display.assert_called_once()
         mock_display_mod.Markdown.assert_called_once()
@@ -650,4 +663,4 @@ class TestDisplayResult:
         client = ByteITClient("test_key")
         # Remove IPython from sys.modules to simulate it not being installed
         with patch.dict(sys.modules, {"IPython": None, "IPython.display": None}):
-            client._try_display_result(b"test", "txt")  # must not raise
+            client._try_display_result(b"test", OutputFormat.TXT)  # must not raise
