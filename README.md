@@ -48,7 +48,7 @@ client.parse(
 `OutputFormat.JSON`, `OutputFormat.HTML`, `OutputFormat.EXCEL`
 
 **Excel output note:** `OutputFormat.EXCEL` extracts tables into one or more Excel
-files. Because a document can contain multiple tables, we returns the Excel
+files. Because a document can contain multiple tables, we return the Excel
 files bundled in a single `.zip` archive. If you pass the `output` parameter
 with `result_format=OutputFormat.EXCEL`, the output path should end with `.zip`
 instead of `.xlsx`.

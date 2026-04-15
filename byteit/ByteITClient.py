@@ -109,6 +109,8 @@ class ByteITClient:
 
         Returns:
             Parsed content as bytes.
+            IMPORTANT: If output format is set to EXCEL,
+            it returns bytes of a zip file containing the Excel file.
 
         Example::
 
@@ -116,7 +118,7 @@ class ByteITClient:
             client.parse("doc.pdf", output="result.md")
             client.parse("doc.pdf", result_format=OutputFormat.JSON)
         """
-        result_format = self._to_output_format(result_format)
+        result_format = self._parse_output_format(result_format)
         job, input_connector = self._submit_job(
             input, processing_options, result_format, output
         )
@@ -166,7 +168,7 @@ class ByteITClient:
             if status.is_completed:
                 result = client.get_job_result(job.id)
         """
-        result_format = self._to_output_format(result_format)
+        result_format = self._parse_output_format(result_format)
         job, _ = self._submit_job(input, processing_options, result_format)
         print(f"Job {job.id} submitted.")
         return job
@@ -228,7 +230,7 @@ class ByteITClient:
         self,
         input: str | Path | InputConnector,
         processing_options: ProcessingOptions | dict | None = None,
-        result_format: str | OutputFormat = OutputFormat.MD,
+        result_format: OutputFormat = OutputFormat.MD,
         output: None | str | Path = None,
     ) -> tuple[Job, InputConnector]:
         """Validate inputs, build connectors, and create a job.
@@ -238,7 +240,6 @@ class ByteITClient:
         if isinstance(processing_options, dict):
             processing_options = ProcessingOptions.from_dict(processing_options)
 
-        result_format = self._to_output_format(result_format)
         input_connector = self._to_input_connector(input)
         output_connector = self._to_output_connector(output)
 
@@ -270,8 +271,8 @@ class ByteITClient:
         # If output is a file path, we download and save after completion
         return LocalFileOutputConnector()
 
-    def _to_output_format(self, result_format: str | OutputFormat) -> OutputFormat:
-        """Validate and normalize the requested output format."""
+    def _parse_output_format(self, result_format: str | OutputFormat) -> OutputFormat:
+        """Parse a public result format input into an OutputFormat."""
         if isinstance(result_format, OutputFormat):
             return result_format
 
@@ -467,6 +468,9 @@ class ByteITClient:
         self, result_bytes: bytes, result_format: OutputFormat
     ) -> None:
         """Try to display result in notebook environment."""
+        if result_format is OutputFormat.EXCEL:
+            return
+
         try:
             # Check if we're in a notebook environment
             from IPython.display import HTML, JSON, Markdown, display
