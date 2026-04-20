@@ -14,6 +14,9 @@ on:
 
 jobs:
   jira-guard:
+    permissions:
+      pull-requests: read
+      contents: read
     uses: byteit-ai/.github/.github/workflows/jira-guard.yml@main
     secrets:
       JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
