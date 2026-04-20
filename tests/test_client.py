@@ -18,6 +18,7 @@ from byteit.exceptions import (
     ValidationError,
 )
 from byteit.models.Job import Job
+from byteit.models.OutputFormat import OutputFormat
 
 
 class TestByteITClientInit:
@@ -196,7 +197,7 @@ class TestCreateJob:
         output_connector = Mock()
         output_connector.to_dict.return_value = {"type": "localfile"}
 
-        result = client._create_job(connector, output_connector, "txt")
+        result = client._create_job(connector, output_connector, OutputFormat.TXT)
 
         assert result == mock_job
         mock_request.assert_called_once()
@@ -227,10 +228,42 @@ class TestCreateJob:
         output_connector = Mock()
         output_connector.to_dict.return_value = {"type": "localfile"}
 
-        result = client._create_job(connector, output_connector, "json")
+        result = client._create_job(connector, output_connector, OutputFormat.JSON)
 
         assert isinstance(result, Job)
         assert result.id == "job_123"
+
+    @patch.object(ByteITClient, "_request")
+    def test_create_job_serializes_excel_format_as_zip(self, mock_request):
+        """Serialize Excel output format as zip in the job creation payload."""
+        client = ByteITClient("test_key")
+        mock_request.return_value = {
+            "job": {
+                "id": "job_excel",
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-01T00:00:00Z",
+                "processing_status": "pending",
+                "result_format": "zip",
+            }
+        }
+
+        file_obj = Mock()
+        file_obj.closed = False
+
+        connector = Mock()
+        connector.to_dict.return_value = {"type": "localfile"}
+        connector.get_file_data.return_value = ("test.pdf", file_obj)
+
+        output_connector = Mock()
+        output_connector.to_dict.return_value = {"type": "localfile"}
+
+        result = client._create_job(connector, output_connector, OutputFormat.EXCEL)
+
+        assert isinstance(result, Job)
+        assert result.result_format == "zip"
+        request_kwargs = mock_request.call_args.kwargs
+        assert request_kwargs["data"]["output_format"] == "zip"
+        file_obj.close.assert_called_once()
 
 
 class TestWaitForCompletion:
@@ -340,7 +373,7 @@ class TestParse:
         result = client.parse("test.pdf")
 
         assert result == b"parsed content"
-        mock_submit.assert_called_once_with("test.pdf", None, "md", None)
+        mock_submit.assert_called_once_with("test.pdf", None, OutputFormat.MD, None)
         mock_wait.assert_called_once_with("job_123", input_connector=mock_connector)
         mock_download.assert_called_once_with("job_123")
 
@@ -365,10 +398,37 @@ class TestParse:
 
         mock_download.return_value = b"parsed content"
 
+        result = client.parse("test.pdf", result_format=OutputFormat.JSON)
+
+        assert result == b"parsed content"
+        mock_display.assert_called_once_with(b"parsed content", OutputFormat.JSON)
+
+    @patch.object(ByteITClient, "_try_display_result")
+    @patch.object(ByteITClient, "_download_result")
+    @patch.object(ByteITClient, "_wait_for_completion")
+    @patch.object(ByteITClient, "_submit_job")
+    def test_parse_converts_string_result_format(
+        self,
+        mock_submit,
+        mock_wait,  # noqa: ARG002
+        mock_download,
+        mock_display,
+    ):
+        """Parse converts string result formats before continuing."""
+        client = ByteITClient("test_key")
+
+        mock_connector = Mock()
+        mock_job = Mock()
+        mock_job.id = "job_123"
+        mock_submit.return_value = (mock_job, mock_connector)
+
+        mock_download.return_value = b"parsed content"
+
         result = client.parse("test.pdf", result_format="json")
 
         assert result == b"parsed content"
-        mock_display.assert_called_once_with(b"parsed content", "json")
+        mock_submit.assert_called_once_with("test.pdf", None, OutputFormat.JSON, None)
+        mock_display.assert_called_once_with(b"parsed content", OutputFormat.JSON)
 
     @patch.object(ByteITClient, "_download_result")
     @patch.object(ByteITClient, "_wait_for_completion")
@@ -413,7 +473,7 @@ class TestParseAsync:
         result = client.parse_async("test.pdf")
 
         assert result is mock_job
-        mock_submit.assert_called_once_with("test.pdf", None, "md")
+        mock_submit.assert_called_once_with("test.pdf", None, OutputFormat.MD)
 
     @patch.object(ByteITClient, "_submit_job")
     def test_parse_async_with_options(self, mock_submit):
@@ -426,11 +486,52 @@ class TestParseAsync:
 
         opts = {"languages": ["de"], "page_range": "1-3"}
         result = client.parse_async(
-            "test.pdf", processing_options=opts, result_format="json"
+            "test.pdf",
+            processing_options=opts,
+            result_format=OutputFormat.JSON,
         )
 
         assert result is mock_job
-        mock_submit.assert_called_once_with("test.pdf", opts, "json")
+        mock_submit.assert_called_once_with("test.pdf", opts, OutputFormat.JSON)
+
+    @patch.object(ByteITClient, "_submit_job")
+    def test_parse_async_converts_string_result_format(self, mock_submit):
+        """parse_async converts string result formats before submission."""
+        client = ByteITClient("test_key")
+
+        mock_job = Mock(spec=Job)
+        mock_job.id = "job_456"
+        mock_submit.return_value = (mock_job, Mock())
+
+        result = client.parse_async("test.pdf", result_format="json")
+
+        assert result is mock_job
+        mock_submit.assert_called_once_with("test.pdf", None, OutputFormat.JSON)
+
+    @patch.object(ByteITClient, "_submit_job")
+    def test_parse_async_converts_excel_name(self, mock_submit):
+        """parse_async accepts the public excel string input."""
+        client = ByteITClient("test_key")
+
+        mock_job = Mock(spec=Job)
+        mock_job.id = "job_excel"
+        mock_submit.return_value = (mock_job, Mock())
+
+        result = client.parse_async("test.pdf", result_format="excel")
+
+        assert result is mock_job
+        mock_submit.assert_called_once_with("test.pdf", None, OutputFormat.EXCEL)
+
+    def test_parse_async_rejects_zip_string_input(self):
+        """parse_async rejects zip as a public string input."""
+        client = ByteITClient("test_key")
+
+        with pytest.raises(
+            ValidationError,
+            match="result_format must be an OutputFormat or one of: "
+            + "txt, json, html, md, excel",
+        ):
+            client.parse_async("test.pdf", result_format="zip")
 
     @patch.object(ByteITClient, "_submit_job")
     def test_parse_async_does_not_wait(self, mock_submit):
@@ -469,7 +570,7 @@ class TestSubmitJob:
         mock_to_output.return_value = mock_output_conn
         mock_create.return_value = mock_job
 
-        job, input_conn = client._submit_job("test.pdf", None, "md", None)
+        job, input_conn = client._submit_job("test.pdf", None, OutputFormat.MD, None)
 
         assert job is mock_job
         assert input_conn is mock_input_conn
@@ -479,7 +580,7 @@ class TestSubmitJob:
             input_connector=mock_input_conn,
             output_connector=mock_output_conn,
             processing_options=None,
-            result_format="md",
+            result_format=OutputFormat.MD,
         )
 
     @patch.object(ByteITClient, "_create_job")
@@ -495,7 +596,7 @@ class TestSubmitJob:
         mock_to_output.return_value = Mock()
         mock_create.return_value = Mock(spec=Job)
 
-        client._submit_job("test.pdf", {"languages": ["de"]}, "json")
+        client._submit_job("test.pdf", {"languages": ["de"]}, OutputFormat.JSON)
 
         call_kwargs = mock_create.call_args[1]
         from byteit.models.ExtractionType import ExtractionType
@@ -507,7 +608,7 @@ class TestSubmitJob:
         client._submit_job(
             "test.pdf",
             {"extraction_type": "complex"},
-            "json",
+            OutputFormat.JSON,
         )
 
         call_kwargs = mock_create.call_args[1]
@@ -598,7 +699,7 @@ class TestDisplayResult:
             sys.modules,
             {"IPython": mock_ipython, "IPython.display": mock_display_mod},
         ):
-            client._try_display_result(b'{"key": "value"}', "json")
+            client._try_display_result(b'{"key": "value"}', OutputFormat.JSON)
 
         mock_display_mod.display.assert_called_once()
         mock_display_mod.JSON.assert_called_once()
@@ -612,7 +713,7 @@ class TestDisplayResult:
             sys.modules,
             {"IPython": mock_ipython, "IPython.display": mock_display_mod},
         ):
-            client._try_display_result(b"# Header", "md")
+            client._try_display_result(b"# Header", OutputFormat.MD)
 
         mock_display_mod.display.assert_called_once()
         mock_display_mod.Markdown.assert_called_once()
@@ -626,7 +727,7 @@ class TestDisplayResult:
             sys.modules,
             {"IPython": mock_ipython, "IPython.display": mock_display_mod},
         ):
-            client._try_display_result(b"<h1>Header</h1>", "html")
+            client._try_display_result(b"<h1>Header</h1>", OutputFormat.HTML)
 
         mock_display_mod.display.assert_called_once()
         mock_display_mod.HTML.assert_called_once()
@@ -640,14 +741,29 @@ class TestDisplayResult:
             sys.modules,
             {"IPython": mock_ipython, "IPython.display": mock_display_mod},
         ):
-            client._try_display_result(b"Plain text", "txt")
+            client._try_display_result(b"Plain text", OutputFormat.TXT)
 
         mock_display_mod.display.assert_called_once()
         mock_display_mod.Markdown.assert_called_once()
+
+    def test_skip_display_for_excel_result(self):
+        """Skip notebook display for Excel archive results."""
+        client = ByteITClient("test_key")
+        mock_ipython, mock_display_mod = _make_ipython_mock()
+
+        with patch.dict(
+            sys.modules,
+            {"IPython": mock_ipython, "IPython.display": mock_display_mod},
+        ):
+            client._try_display_result(
+                b"PK\x03\x04binary zip content", OutputFormat.EXCEL
+            )
+
+        mock_display_mod.display.assert_not_called()
 
     def test_display_handles_import_error(self):
         """Gracefully skip display when IPython is not available."""
         client = ByteITClient("test_key")
         # Remove IPython from sys.modules to simulate it not being installed
         with patch.dict(sys.modules, {"IPython": None, "IPython.display": None}):
-            client._try_display_result(b"test", "txt")  # must not raise
+            client._try_display_result(b"test", OutputFormat.TXT)  # must not raise

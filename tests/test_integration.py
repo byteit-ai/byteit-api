@@ -8,7 +8,7 @@ import os
 
 import pytest
 
-from byteit import ByteITClient
+from byteit import ByteITClient, OutputFormat
 
 # Skip integration tests by default
 pytestmark = pytest.mark.integration
@@ -42,7 +42,7 @@ class TestIntegrationParse:
 
     def test_parse_local_file(self, client, sample_file):
         """Parse a local file end-to-end."""
-        result = client.parse(str(sample_file), result_format="txt")
+        result = client.parse(str(sample_file), result_format=OutputFormat.TXT)
 
         assert isinstance(result, bytes)
         assert len(result) > 0
@@ -52,7 +52,9 @@ class TestIntegrationParse:
         output_file = tmp_path / "output.txt"
 
         result = client.parse(
-            str(sample_file), result_format="txt", output=str(output_file)
+            str(sample_file),
+            result_format=OutputFormat.TXT,
+            output=str(output_file),
         )
 
         assert isinstance(result, bytes)
@@ -61,7 +63,12 @@ class TestIntegrationParse:
 
     def test_parse_different_formats(self, client, sample_file):
         """Parse with different output formats."""
-        formats = ["txt", "json", "md", "html"]
+        formats = [
+            OutputFormat.TXT,
+            OutputFormat.JSON,
+            OutputFormat.MD,
+            OutputFormat.HTML,
+        ]
 
         for fmt in formats:
             result = client.parse(str(sample_file), result_format=fmt)

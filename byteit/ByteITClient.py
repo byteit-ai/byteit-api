@@ -26,6 +26,7 @@ from .exceptions import (
 )
 from .models.Job import Job
 from .models.JobList import JobList
+from .models.OutputFormat import OutputFormat
 from .models.ProcessingOptions import ProcessingOptions
 from .progress import ProgressTracker
 
@@ -88,7 +89,7 @@ class ByteITClient:
         input: str | Path | InputConnector,
         output: None | str | Path = None,
         processing_options: ProcessingOptions | dict | None = None,
-        result_format: str = "md",
+        result_format: str | OutputFormat = OutputFormat.MD,
     ) -> bytes:
         """Parse a document and wait for the result.
 
@@ -101,18 +102,23 @@ class ByteITClient:
             processing_options: ProcessingOptions or dict with keys:
                 ``languages`` (list[str]), ``page_range`` (str), and
                 ``extraction_type`` (str or ExtractionType).
-            result_format: Output format: ``"txt"``, ``"json"``, ``"md"``,
-                or ``"html"`` (default: ``"md"``).
+            result_format: Output format enum. Supported values are
+                ``OutputFormat.TXT``, ``OutputFormat.JSON``,
+                ``OutputFormat.MD``, ``OutputFormat.HTML``, and
+                ``OutputFormat.EXCEL``.
 
         Returns:
             Parsed content as bytes.
+            IMPORTANT: If output format is set to EXCEL,
+            it returns bytes of a zip file containing the Excel file.
 
         Example::
 
             result = client.parse("document.pdf")
             client.parse("doc.pdf", output="result.md")
-            client.parse("doc.pdf", result_format="json")
+            client.parse("doc.pdf", result_format=OutputFormat.JSON)
         """
+        result_format = self._parse_output_format(result_format)
         job, input_connector = self._submit_job(
             input, processing_options, result_format, output
         )
@@ -134,7 +140,7 @@ class ByteITClient:
         self,
         input: str | Path | InputConnector,
         processing_options: ProcessingOptions | dict | None = None,
-        result_format: str = "md",
+        result_format: str | OutputFormat = OutputFormat.MD,
     ) -> Job:
         """Submit a document for parsing and return immediately.
 
@@ -146,8 +152,10 @@ class ByteITClient:
             processing_options: ProcessingOptions or dict with keys:
                 ``languages`` (list[str]), ``page_range`` (str), and
                 ``extraction_type`` (str or ExtractionType).
-            result_format: Output format: ``"txt"``, ``"json"``, ``"md"``,
-                or ``"html"`` (default: ``"md"``).
+            result_format: Output format enum. Supported values are
+                ``OutputFormat.TXT``, ``OutputFormat.JSON``,
+                ``OutputFormat.MD``, ``OutputFormat.HTML``, and
+                ``OutputFormat.EXCEL``.
 
         Returns:
             Job object with ``id``, ``processing_status``, and other metadata.
@@ -160,6 +168,7 @@ class ByteITClient:
             if status.is_completed:
                 result = client.get_job_result(job.id)
         """
+        result_format = self._parse_output_format(result_format)
         job, _ = self._submit_job(input, processing_options, result_format)
         print(f"Job {job.id} submitted.")
         return job
@@ -221,7 +230,7 @@ class ByteITClient:
         self,
         input: str | Path | InputConnector,
         processing_options: ProcessingOptions | dict | None = None,
-        result_format: str = "md",
+        result_format: OutputFormat = OutputFormat.MD,
         output: None | str | Path = None,
     ) -> tuple[Job, InputConnector]:
         """Validate inputs, build connectors, and create a job.
@@ -262,13 +271,34 @@ class ByteITClient:
         # If output is a file path, we download and save after completion
         return LocalFileOutputConnector()
 
+    def _parse_output_format(self, result_format: str | OutputFormat) -> OutputFormat:
+        """Parse a public result format input into an OutputFormat."""
+        if isinstance(result_format, OutputFormat):
+            return result_format
+
+        if isinstance(result_format, str):
+            normalized_result_format = result_format.strip().lower()
+            for output_format in OutputFormat:
+                if normalized_result_format == output_format.name.lower() or (
+                    output_format is not OutputFormat.EXCEL
+                    and normalized_result_format == output_format.value.lower()
+                ):
+                    return output_format
+
+        supported_formats = ", ".join(
+            output_format.name.lower() for output_format in OutputFormat
+        )
+        raise ValidationError(
+            f"result_format must be an OutputFormat or one of: {supported_formats}"
+        )
+
     # ==================== INTERNAL METHODS ====================
 
     def _create_job(
         self,
         input_connector: InputConnector,
         output_connector: OutputConnector,
-        result_format: str,
+        result_format: OutputFormat,
         processing_options: ProcessingOptions | None = None,
     ) -> Job:
         """Create a processing job."""
@@ -278,7 +308,7 @@ class ByteITClient:
 
         # Build base request data
         data: dict[str, Any] = {
-            "output_format": result_format,
+            "output_format": result_format.value,
             "processing_options": json.dumps(
                 processing_options.to_dict() if processing_options else {}
             ),
@@ -434,25 +464,28 @@ class ByteITClient:
 
         raise ByteITError(message, response.status_code, data)
 
-    def _try_display_result(self, result_bytes: bytes, result_format: str) -> None:
+    def _try_display_result(
+        self, result_bytes: bytes, result_format: OutputFormat
+    ) -> None:
         """Try to display result in notebook environment."""
+        if result_format is OutputFormat.EXCEL:
+            return
+
         try:
             # Check if we're in a notebook environment
             from IPython.display import HTML, JSON, Markdown, display
 
             content = result_bytes.decode("utf-8", errors="replace")
 
-            if result_format == "json":
-                import json
-
+            if result_format is OutputFormat.JSON:
                 try:
                     data = json.loads(content)
                     display(JSON(data, expanded=True))
                 except json.JSONDecodeError:
                     display(Markdown(f"```json\n{content}\n```"))
-            elif result_format == "md":
+            elif result_format is OutputFormat.MD:
                 display(Markdown(content))
-            elif result_format == "html":
+            elif result_format is OutputFormat.HTML:
                 display(HTML(content))
             else:  # txt or unknown
                 display(Markdown(f"```\n{content}\n```"))

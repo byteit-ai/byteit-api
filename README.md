@@ -17,7 +17,7 @@ Requires Python 3.8+ and an API key from [byteit.ai](https://byteit.ai).
 ## Quick Start
 
 ```python
-from byteit import ByteITClient
+from byteit import ByteITClient, OutputFormat
 
 client = ByteITClient(api_key="your_api_key")
 result = client.parse("document.pdf")
@@ -34,13 +34,24 @@ Returns raw bytes. Pass `output="result.md"` to save directly to disk.
 
 ```python
 # Returns bytes
-result = client.parse("invoice.pdf", result_format="json")
+result = client.parse("invoice.pdf", result_format=OutputFormat.JSON)
 
 # Save to file
-client.parse("invoice.pdf", result_format="md", output="invoice.md")
+client.parse(
+    "invoice.pdf",
+    result_format=OutputFormat.MD,
+    output="invoice.md",
+)
 ```
 
-**Output formats:** `md` *(default)*, `txt`, `json`, `html`
+**Output formats:** `OutputFormat.MD` *(default)*, `OutputFormat.TXT`,
+`OutputFormat.JSON`, `OutputFormat.HTML`, `OutputFormat.EXCEL`
+
+**Excel output note:** `OutputFormat.EXCEL` extracts tables into one or more Excel
+files. Because a document can contain multiple tables, we return the Excel
+files bundled in a single `.zip` archive. If you pass the `output` parameter
+with `result_format=OutputFormat.EXCEL`, the output path should end with `.zip`
+instead of `.xlsx`.
 
 ### Async (non-blocking)
 
@@ -165,16 +176,19 @@ except ByteITError as e:
 | `get_job_result(job_id)` | Download result as `bytes` |
 | `get_jobs()` | List all jobs as `list[Job]` |
 
-#### `parse(input, output=None, processing_options=None, result_format="md") → bytes`
+#### `parse(input, output=None, processing_options=None, result_format=OutputFormat.MD) → bytes`
 
 | Param | Type | Description |
 |---|---|---|
 | `input` | `str \| Path \| InputConnector` | File to parse |
 | `output` | `str \| Path \| None` | Save result to disk (optional) |
 | `processing_options` | `ProcessingOptions \| dict \| None` | Languages, page range, etc. |
-| `result_format` | `str` | `"md"`, `"txt"`, `"json"`, `"html"` |
+| `result_format` | `OutputFormat` | `OutputFormat.MD`, `OutputFormat.TXT`, `OutputFormat.JSON`, `OutputFormat.HTML`, `OutputFormat.EXCEL` |
 
-#### `parse_async(input, processing_options=None, result_format="md") → Job`
+When `result_format` is `OutputFormat.EXCEL`, the returned bytes represent a
+`.zip` archive containing the generated Excel files.
+
+#### `parse_async(input, processing_options=None, result_format=OutputFormat.MD) → Job`
 
 Same parameters as `parse`, minus `output`. Returns a `Job` without waiting.
 
@@ -195,10 +209,10 @@ Same parameters as `parse`, minus `output`. Returns a `Job` without waiting.
 
 Results are automatically rendered when running in Jupyter:
 
-- **`md`** → rendered Markdown
-- **`html`** → rendered HTML
-- **`json`** → interactive tree
-- **`txt`** → code block
+- **`OutputFormat.MD`** → rendered Markdown
+- **`OutputFormat.HTML`** → rendered HTML
+- **`OutputFormat.JSON`** → interactive tree
+- **`OutputFormat.TXT`** → code block
 
 To disable auto-display, pass `output="file.md"`.
 
