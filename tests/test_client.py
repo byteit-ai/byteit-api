@@ -509,6 +509,31 @@ class TestParseAsync:
         mock_submit.assert_called_once_with("test.pdf", None, OutputFormat.JSON)
 
     @patch.object(ByteITClient, "_submit_job")
+    def test_parse_async_converts_excel_name(self, mock_submit):
+        """parse_async accepts the public excel string input."""
+        client = ByteITClient("test_key")
+
+        mock_job = Mock(spec=Job)
+        mock_job.id = "job_excel"
+        mock_submit.return_value = (mock_job, Mock())
+
+        result = client.parse_async("test.pdf", result_format="excel")
+
+        assert result is mock_job
+        mock_submit.assert_called_once_with("test.pdf", None, OutputFormat.EXCEL)
+
+    def test_parse_async_rejects_zip_string_input(self):
+        """parse_async rejects zip as a public string input."""
+        client = ByteITClient("test_key")
+
+        with pytest.raises(
+            ValidationError,
+            match="result_format must be an OutputFormat or one of: "
+            + "txt, json, html, md, excel",
+        ):
+            client.parse_async("test.pdf", result_format="zip")
+
+    @patch.object(ByteITClient, "_submit_job")
     def test_parse_async_does_not_wait(self, mock_submit):
         """parse_async doesn't call _wait_for_completion or _download_result."""
         client = ByteITClient("test_key")

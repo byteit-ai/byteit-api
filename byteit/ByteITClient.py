@@ -279,14 +279,14 @@ class ByteITClient:
         if isinstance(result_format, str):
             normalized_result_format = result_format.strip().lower()
             for output_format in OutputFormat:
-                if normalized_result_format in (
-                    output_format.value.lower(),
-                    output_format.name.lower(),
+                if normalized_result_format == output_format.name.lower() or (
+                    output_format is not OutputFormat.EXCEL
+                    and normalized_result_format == output_format.value.lower()
                 ):
                     return output_format
 
         supported_formats = ", ".join(
-            output_format.value for output_format in OutputFormat
+            output_format.name.lower() for output_format in OutputFormat
         )
         raise ValidationError(
             f"result_format must be an OutputFormat or one of: {supported_formats}"
