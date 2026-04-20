@@ -9,6 +9,8 @@ on:
     types: [opened, edited, reopened, synchronize, closed]
   pull_request_review:
     types: [submitted]
+  push:
+    branches: [dev, main]
 
 jobs:
   jira-guard:
