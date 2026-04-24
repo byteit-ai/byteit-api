@@ -265,54 +265,129 @@ class TestCreateJob:
         assert request_kwargs["data"]["output_format"] == "zip"
         file_obj.close.assert_called_once()
 
+    @patch.object(ByteITClient, "_request")
+    @patch.object(ByteITClient, "_get_job_status")
+    def test_create_job_uses_parse_jobs_collection_path(
+        self, mock_get_status, mock_request
+    ):
+        """Create job posts parse jobs to the new collection endpoint."""
+        client = ByteITClient("test_key")
+        mock_request.return_value = {"job_id": "job_123"}
+        mock_get_status.return_value = Mock(spec=Job)
+
+        connector = Mock()
+        connector.to_dict.return_value = {"type": "localfile"}
+        connector.get_file_data.return_value = ("test.pdf", Mock())
+
+        output_connector = Mock()
+        output_connector.to_dict.return_value = {"type": "localfile"}
+
+        client._create_job(connector, output_connector, OutputFormat.MD)
+
+        assert mock_request.call_args.args[:2] == (
+            "POST",
+            "/v1/jobs/parse-jobs/",
+        )
+
+
+class TestJobEndpointRouting:
+    """Test job endpoint routing for parse jobs versus generic job status."""
+
+    @patch.object(ByteITClient, "_request")
+    def test_get_job_status_uses_parse_job_detail_endpoint(self, mock_request):
+        """get_job_status reads parse job details from the parse-jobs endpoint."""
+        client = ByteITClient("test_key")
+        mock_request.return_value = {
+            "parse_job": {
+                "id": "job_123",
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-01T00:00:00Z",
+                "processing_status": "completed",
+                "result_format": "md",
+            }
+        }
+
+        job = client._get_job_status("job_123")
+
+        assert job.id == "job_123"
+        mock_request.assert_called_once_with("GET", "/v1/jobs/parse-jobs/job_123/")
+
+    @patch.object(ByteITClient, "_request")
+    def test_get_job_processing_status_uses_generic_status_endpoint(self, mock_request):
+        """Polling status stays under the generic jobs endpoint."""
+        client = ByteITClient("test_key")
+        mock_request.return_value = {"processing_status": "processing"}
+
+        result = client._get_job_processing_status("job_123")
+
+        assert result == {"processing_status": "processing"}
+        mock_request.assert_called_once_with("GET", "/v1/jobs/job_123/status/")
+
+    @patch.object(ByteITClient, "_request")
+    def test_list_jobs_reads_parse_jobs_collection(self, mock_request):
+        """get_jobs reads parse jobs from the parse-jobs collection response."""
+        client = ByteITClient("test_key")
+        mock_request.return_value = {
+            "parse_jobs": [
+                {
+                    "id": "job_123",
+                    "created_at": "2024-01-01T00:00:00Z",
+                    "updated_at": "2024-01-01T00:00:00Z",
+                    "processing_status": "completed",
+                    "result_format": "md",
+                }
+            ],
+            "count": 1,
+            "detail": "",
+        }
+
+        job_list = client._list_jobs()
+
+        assert len(job_list.jobs) == 1
+        assert job_list.jobs[0].id == "job_123"
+        mock_request.assert_called_once_with("GET", "/v1/jobs/parse-jobs/")
+
 
 class TestWaitForCompletion:
     """Test _wait_for_completion method."""
 
     @patch("byteit.ByteITClient.ProgressTracker")
-    @patch.object(ByteITClient, "_get_job_status")
+    @patch.object(ByteITClient, "_get_job_processing_status")
     @patch("time.sleep")
     def test_wait_returns_on_completion(self, mock_sleep, mock_get_status, mock_tracker):
         """Polling stops when job completes."""
         client = ByteITClient("test_key")
 
-        job_pending = Mock()
-        job_pending.is_completed = False
-        job_pending.is_failed = False
-
-        job_complete = Mock()
-        job_complete.is_completed = True
-        job_complete.is_failed = False
-
-        mock_get_status.side_effect = [job_pending, job_complete]
+        mock_get_status.side_effect = [
+            {"processing_status": "processing"},
+            {"processing_status": "completed"},
+        ]
 
         result = client._wait_for_completion("job_123")
 
-        assert result == job_complete
+        assert result.processing_status == "completed"
         assert mock_get_status.call_count == 2
         mock_sleep.assert_called_once_with(1.0)
         mock_tracker.return_value.update.assert_called()
         mock_tracker.return_value.finalize.assert_called_once()
 
     @patch("byteit.ByteITClient.ProgressTracker")
-    @patch.object(ByteITClient, "_get_job_status")
+    @patch.object(ByteITClient, "_get_job_processing_status")
     def test_wait_raises_on_failure(self, mock_get_status, mock_tracker):
         """Failed job raises JobProcessingError."""
         client = ByteITClient("test_key")
 
-        job_failed = Mock()
-        job_failed.is_completed = False
-        job_failed.is_failed = True
-        job_failed.processing_error = "Parse error"
-
-        mock_get_status.return_value = job_failed
+        mock_get_status.return_value = {
+            "processing_status": "failed",
+            "message": "Parse error",
+        }
 
         with pytest.raises(JobProcessingError, match="Parse error"):
             client._wait_for_completion("job_123")
         mock_tracker.return_value.close.assert_called_once()
 
     @patch("byteit.ByteITClient.ProgressTracker")
-    @patch.object(ByteITClient, "_get_job_status")
+    @patch.object(ByteITClient, "_get_job_processing_status")
     @patch("time.sleep")
     def test_wait_adaptive_polling_formula(
         self,
@@ -323,19 +398,11 @@ class TestWaitForCompletion:
         """Polling intervals follow MIN(1*1.5^(x-1), 10) formula."""
         client = ByteITClient("test_key")
 
-        job_processing = Mock()
-        job_processing.is_completed = False
-        job_processing.is_failed = False
-
-        job_complete = Mock()
-        job_complete.is_completed = True
-        job_complete.is_failed = False
-
         mock_get_status.side_effect = [
-            job_processing,
-            job_processing,
-            job_processing,
-            job_complete,
+            {"processing_status": "processing"},
+            {"processing_status": "processing"},
+            {"processing_status": "processing"},
+            {"processing_status": "completed"},
         ]
 
         client._wait_for_completion("job_123")
@@ -374,7 +441,9 @@ class TestParse:
 
         assert result == b"parsed content"
         mock_submit.assert_called_once_with("test.pdf", None, OutputFormat.MD, None)
-        mock_wait.assert_called_once_with("job_123", input_connector=mock_connector)
+        mock_wait.assert_called_once_with(
+            "job_123", input_connector=mock_connector, job=mock_job
+        )
         mock_download.assert_called_once_with("job_123")
 
     @patch.object(ByteITClient, "_try_display_result")
@@ -455,7 +524,9 @@ class TestParse:
 
         assert result == b"parsed content"
         mock_write.assert_called_once_with(b"parsed content")
-        mock_wait.assert_called_once_with("job_123", input_connector=mock_connector)
+        mock_wait.assert_called_once_with(
+            "job_123", input_connector=mock_connector, job=mock_job
+        )
 
 
 class TestParseAsync:
