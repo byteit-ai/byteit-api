@@ -81,19 +81,19 @@ class TestIntegrationJobs:
 
     def test_get_jobs(self, client):
         """List all jobs."""
-        jobs = client.get_jobs()
-        assert isinstance(jobs, list)
+        job_list = client.get_jobs()
+        assert hasattr(job_list, "jobs")
 
-    def test_get_job_status(self, client, sample_file):
-        """Get specific job by ID."""
+    def test_get_job_details(self, client, sample_file):
+        """Get specific job details by ID."""
         # Create a job first
         result = client.parse(str(sample_file))  # noqa: F841
 
         # Get all jobs and find the one we just created
-        jobs = client.get_jobs()
-        if jobs:
-            job = client.get_job_status(jobs[0].id)
-            assert job.id == jobs[0].id
+        job_list = client.get_jobs()
+        if job_list.jobs:
+            job = client.get_job_details(job_list.jobs[0].id)
+            assert job.id == job_list.jobs[0].id
 
 
 class TestIntegrationContextManager:

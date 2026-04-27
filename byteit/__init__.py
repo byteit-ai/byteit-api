@@ -20,9 +20,10 @@ from .exceptions import (
 )
 from .models.DocumentMetadata import DocumentMetadata
 from .models.ExtractionType import ExtractionType
-from .models.Job import Job
 from .models.JobList import JobList
+from .models.JobStatus import JobStatus
 from .models.OutputFormat import OutputFormat
+from .models.ParseJob import ParseJob
 from .models.ProcessingOptions import ProcessingOptions
 from .validations import validate_processing_options
 
@@ -39,12 +40,13 @@ except PackageNotFoundError:
 
 __all__ = [
     "ByteITClient",
-    "Job",
     "JobList",
+    "JobStatus",
     "DocumentMetadata",
     "ProcessingOptions",
     "ExtractionType",
     "OutputFormat",
+    "ParseJob",
     "InputConnector",
     "OutputConnector",
     "LocalFileInputConnector",

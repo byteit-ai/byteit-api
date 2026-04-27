@@ -2,16 +2,18 @@
 
 from .DocumentMetadata import DocumentMetadata
 from .ExtractionType import ExtractionType
-from .Job import Job
 from .JobList import JobList
+from .JobStatus import JobStatus
 from .OutputFormat import OutputFormat
+from .ParseJob import ParseJob
 from .ProcessingOptions import ProcessingOptions
 
 __all__ = [
     "DocumentMetadata",
     "ExtractionType",
-    "Job",
     "JobList",
+    "JobStatus",
     "OutputFormat",
+    "ParseJob",
     "ProcessingOptions",
 ]

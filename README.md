@@ -65,6 +65,9 @@ job = client.parse_async("document.pdf")
 status = client.get_job_status(job.id)
 # status.processing_status: "pending" | "processing" | "completed" | "failed"
 
+# Fetch full job details when needed
+details = client.get_job_details(job.id)
+
 # Download when ready
 if status.is_completed:
     result = client.get_job_result(job.id)
@@ -73,7 +76,9 @@ if status.is_completed:
 ### Job management
 
 ```python
-for job in client.get_jobs():
+job_list = client.get_jobs()
+
+for job in job_list.jobs:
     print(f"{job.id}  {job.processing_status}  {job.result_format}")
 ```
 
@@ -171,10 +176,11 @@ except ByteITError as e:
 | Method | Description |
 |---|---|
 | `parse(input, ...)` | Parse a document, block until complete, return `bytes` |
-| `parse_async(input, ...)` | Submit a job, return `Job` immediately |
-| `get_job_status(job_id)` | Get current `Job` status |
+| `parse_async(input, ...)` | Submit a job, return `ParseJob` immediately |
+| `get_job_details(job_id)` | Get full `ParseJob` details |
+| `get_job_status(job_id)` | Get current `JobStatus` |
 | `get_job_result(job_id)` | Download result as `bytes` |
-| `get_jobs()` | List all jobs as `list[Job]` |
+| `get_jobs()` | List all jobs as `JobList` |
 
 #### `parse(input, output=None, processing_options=None, result_format=OutputFormat.MD) → bytes`
 
@@ -188,11 +194,11 @@ except ByteITError as e:
 When `result_format` is `OutputFormat.EXCEL`, the returned bytes represent a
 `.zip` archive containing the generated Excel files.
 
-#### `parse_async(input, processing_options=None, result_format=OutputFormat.MD) → Job`
+#### `parse_async(input, processing_options=None, result_format=OutputFormat.MD) → ParseJob`
 
-Same parameters as `parse`, minus `output`. Returns a `Job` without waiting.
+Same parameters as `parse`, minus `output`. Returns a `ParseJob` without waiting.
 
-#### `Job` properties
+#### `ParseJob` properties
 
 | Property | Type | Description |
 |---|---|---|
