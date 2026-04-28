@@ -74,8 +74,8 @@ class ParseJob:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ParseJob":
         """Create a ParseJob instance from API response data."""
-        create_time = cls._parse_datetime(data.get("create_time", data.get("created_at")))
-        update_time = cls._parse_datetime(data.get("update_time", data.get("updated_at")))
+        create_time = cls._parse_datetime(data.get("create_time") or data.get("created_at"))
+        update_time = cls._parse_datetime(data.get("update_time") or data.get("updated_at"))
         delete_time = cls._parse_datetime(data.get("delete_time"))
 
         metadata = None
