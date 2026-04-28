@@ -61,7 +61,8 @@ class ByteITClient:
         Asynchronous (non-blocking)::
 
             job = client.parse_async("document.pdf") # ... do other work ...
-            status = client.get_job_status(job.id) if status.is_completed:
+            status = client.get_job_status(job.id)
+            if status.is_completed:
                 details = client.get_job_details(job.id)
                 result = client.get_job_result(details.id)
     """
