@@ -2,6 +2,7 @@
 
 import json
 import time
+from datetime import datetime
 from pathlib import Path
 from types import TracebackType
 from typing import Any
@@ -24,9 +25,10 @@ from .exceptions import (
     ServerError,
     ValidationError,
 )
-from .models.Job import Job
 from .models.JobList import JobList
+from .models.JobStatus import JobStatus
 from .models.OutputFormat import OutputFormat
+from .models.ParseJob import ParseJob
 from .models.ProcessingOptions import ProcessingOptions
 from .progress import ProgressTracker
 
@@ -34,6 +36,7 @@ from .progress import ProgressTracker
 API_VERSION = "v1"
 API_BASE = f"/{API_VERSION}"
 JOBS_PATH = "jobs"
+PARSE_JOBS_PATH = "parse-jobs"
 
 
 class ByteITClient:
@@ -44,7 +47,8 @@ class ByteITClient:
     Methods:
         parse(input, ...):           Parse a document and wait for the result.
         parse_async(input, ...):     Submit a document for parsing, return.
-        get_job_status(job_id):      Check the processing status of a job.
+        get_job_details(job_id):     Get the full parse-job resource.
+        get_job_status(job_id):      Check the lightweight processing status.
         get_job_result(job_id):      Download the result of a completed job.
         get_jobs():                  List all jobs for your account.
 
@@ -57,8 +61,10 @@ class ByteITClient:
         Asynchronous (non-blocking)::
 
             job = client.parse_async("document.pdf") # ... do other work ...
-            status = client.get_job_status(job.id) if status.is_completed:
-                result = client.get_job_result(job.id)
+            status = client.get_job_status(job.id)
+            if status.is_completed:
+                details = client.get_job_details(job.id)
+                result = client.get_job_result(details.id)
     """
 
     # BASE_URL = "https://api.byteit.ai"
@@ -123,7 +129,7 @@ class ByteITClient:
             input, processing_options, result_format, output
         )
         print(f"Job {job.id} created. Waiting for completion...")
-        self._wait_for_completion(job.id, input_connector=input_connector)
+        self._wait_for_completion(job.id, input_connector=input_connector, job=job)
 
         # Download result
         result_bytes = self._download_result(job.id)
@@ -141,11 +147,12 @@ class ByteITClient:
         input: str | Path | InputConnector,
         processing_options: ProcessingOptions | dict | None = None,
         result_format: str | OutputFormat = OutputFormat.MD,
-    ) -> Job:
+    ) -> ParseJob:
         """Submit a document for parsing and return immediately.
 
         Use this for non-blocking workflows. Check progress with
-        :meth:`get_job_status` and retrieve results with :meth:`get_job_result`.
+        :meth:`get_job_status`, inspect metadata with :meth:`get_job_details`,
+        and retrieve results with :meth:`get_job_result`.
 
         Args:
             input: File path (str/Path) or InputConnector.
@@ -158,7 +165,7 @@ class ByteITClient:
                 ``OutputFormat.EXCEL``.
 
         Returns:
-            Job object with ``id``, ``processing_status``, and other metadata.
+            ParseJob object with ``id``, ``processing_status``, and other metadata.
 
         Example::
 
@@ -173,34 +180,50 @@ class ByteITClient:
         print(f"Job {job.id} submitted.")
         return job
 
-    def get_jobs(self) -> list[Job]:
+    def get_jobs(self) -> JobList:
         """List all jobs for your account.
 
         Returns:
-            List of Job objects.
+            JobList response with collection metadata and jobs.
 
         Example::
 
-            for job in client.get_jobs():
+            job_list = client.get_jobs()
+            for job in job_list.jobs:
                 print(f"{job.id}: {job.processing_status}")
         """
-        job_list = self._list_jobs()
-        return job_list.jobs
+        return self._list_jobs()
 
-    def get_job_status(self, job_id: str) -> Job:
-        """Check the processing status of a job.
+    def get_job_details(self, job_id: str) -> ParseJob:
+        """Get the full parse-job resource for a job.
 
         Args:
             job_id: The job ID.
 
         Returns:
-            Job object with current status and metadata.
+            ParseJob object with backend detail fields and metadata.
 
         Example::
 
-            job = client.get_job_status("job_123")
-            if job.is_completed:
-                result = client.get_job_result(job.id)
+            job = client.get_job_details("job_123")
+            print(job.result_format)
+        """
+        return self._get_job_details(job_id)
+
+    def get_job_status(self, job_id: str) -> JobStatus:
+        """Check the lightweight processing status of a job.
+
+        Args:
+            job_id: The job ID.
+
+        Returns:
+            JobStatus object with progress, status, and backend message.
+
+        Example::
+
+            status = client.get_job_status("job_123")
+            if status.is_completed:
+                result = client.get_job_result("job_123")
         """
         return self._get_job_status(job_id)
 
@@ -232,7 +255,7 @@ class ByteITClient:
         processing_options: ProcessingOptions | dict | None = None,
         result_format: OutputFormat = OutputFormat.MD,
         output: None | str | Path = None,
-    ) -> tuple[Job, InputConnector]:
+    ) -> tuple[ParseJob, InputConnector]:
         """Validate inputs, build connectors, and create a job.
 
         Shared by :meth:`parse` and :meth:`parse_async`.
@@ -300,7 +323,7 @@ class ByteITClient:
         output_connector: OutputConnector,
         result_format: OutputFormat,
         processing_options: ProcessingOptions | None = None,
-    ) -> Job:
+    ) -> ParseJob:
         """Create a processing job."""
         connector_type = (
             input_connector.to_dict().get("type", "localfile").strip().lower()
@@ -338,7 +361,10 @@ class ByteITClient:
         # Make request with cleanup
         try:
             response = self._request(
-                "POST", f"{API_BASE}/{JOBS_PATH}/", files=files, data=data
+                "POST",
+                self._build_job_collection_path(PARSE_JOBS_PATH),
+                files=files,
+                data=data,
             )
         finally:
             if file_obj and hasattr(file_obj, "close") and not file_obj.closed:
@@ -346,46 +372,59 @@ class ByteITClient:
 
         # Return job from response
         if "job_id" in response:
-            return self._get_job_status(response["job_id"])
+            return self._get_job_details(response["job_id"])
 
-        return Job.from_dict(response["job"])
+        job_data = self._extract_job_data(response, primary_key="parse_job")
+        return ParseJob.from_dict(job_data)
 
-    def _get_job_status(self, job_id: str) -> Job:
-        """Get current job status."""
-        response = self._request("GET", f"{API_BASE}/{JOBS_PATH}/{job_id}/")
-        job_data = response.get("job", response.get("document", response))
-        return Job.from_dict(job_data)
+    def _get_job_details(self, job_id: str) -> ParseJob:
+        """Get current parse-job details."""
+        response = self._request(
+            "GET", self._build_job_resource_path(job_id, PARSE_JOBS_PATH)
+        )
+        job_data = self._extract_job_data(response, primary_key="parse_job")
+        return ParseJob.from_dict(job_data)
+
+    def _get_job_status(self, job_id: str) -> JobStatus:
+        """Get lightweight processing status from the generic jobs endpoint."""
+        response = self._request("GET", self._build_job_status_path(job_id))
+        return JobStatus.from_dict(response)
+
+    def _get_job_processing_status(self, job_id: str) -> JobStatus:
+        """Backward-compatible alias for the lightweight status endpoint."""
+        return self._get_job_status(job_id)
 
     def _list_jobs(self) -> JobList:
         """List all jobs."""
-        response = self._request("GET", f"{API_BASE}/{JOBS_PATH}/")
-        jobs_data = response.get("jobs", response.get("documents", []))
-        jobs = [Job.from_dict(doc) for doc in jobs_data]
-        return JobList(
-            jobs=jobs,
-            count=response.get("count", len(jobs)),
-            detail=response.get("detail", ""),
-        )
+        response = self._request("GET", self._build_job_collection_path(PARSE_JOBS_PATH))
+        return JobList.from_dict(response)
 
     def _wait_for_completion(
-        self, job_id: str, input_connector: InputConnector | None = None
-    ) -> Job:
+        self,
+        job_id: str,
+        input_connector: InputConnector | None = None,
+        job: ParseJob | None = None,
+    ) -> ParseJob:
         """Wait for job to complete with adaptive polling: MIN(1*1.5^(x-1), 10)."""
         tracker = ProgressTracker(input_connector)
         iteration = 1
+        job_snapshot = job
 
         while True:
-            job = self._get_job_status(job_id)
-            tracker.update(job)
+            status = self._get_job_processing_status(job_id)
+            if isinstance(status, dict):
+                status = JobStatus.from_dict(status)
+            job_snapshot = self._merge_job_status(job_id, status, job_snapshot)
+            tracker.update(job_snapshot)
 
-            if job.is_completed:
+            if status.is_completed:
                 tracker.finalize()
-                return job
+                return job_snapshot
 
-            if job.is_failed:
+            if status.is_failed:
                 tracker.close()
                 raise JobProcessingError(
-                    f"Job failed: {job.processing_error or 'Unknown error'}"
+                    f"Job failed: {job_snapshot.processing_error or 'Unknown error'}"
                 )
 
             poll_interval = min(1 * (1.5 ** (iteration - 1)), 10)
@@ -394,7 +433,7 @@ class ByteITClient:
 
     def _download_result(self, job_id: str) -> bytes:
         """Download job result."""
-        url = self._build_url(f"{API_BASE}/{JOBS_PATH}/{job_id}/result/")
+        url = self._build_url(self._build_job_result_path(job_id, PARSE_JOBS_PATH))
         response = self._session.get(url, timeout=self.DEFAULT_TIMEOUT)
         response.raise_for_status()
 
@@ -421,6 +460,78 @@ class ByteITClient:
     def _build_url(self, path: str) -> str:
         """Build full URL."""
         return f"{self.BASE_URL}/{path.lstrip('/')}"
+
+    def _build_job_collection_path(self, job_type: str | None = None) -> str:
+        """Build a collection path under the jobs API namespace."""
+        segments = [API_BASE, JOBS_PATH]
+        if job_type:
+            segments.append(job_type)
+        return "/" + "/".join(segment.strip("/") for segment in segments) + "/"
+
+    def _build_job_resource_path(self, job_id: str, job_type: str | None = None) -> str:
+        """Build a resource path for a specific job type."""
+        return f"{self._build_job_collection_path(job_type)}{job_id}/"
+
+    def _build_job_result_path(self, job_id: str, job_type: str | None = None) -> str:
+        """Build a result download path for a specific job type."""
+        return f"{self._build_job_resource_path(job_id, job_type)}result/"
+
+    def _build_job_status_path(self, job_id: str) -> str:
+        """Build the generic jobs processing-status path."""
+        return f"{self._build_job_resource_path(job_id)}status/"
+
+    def _extract_job_data(
+        self,
+        response: dict[str, Any],
+        primary_key: str,
+    ) -> dict[str, Any]:
+        """Extract a job payload from known API response shapes."""
+        return response.get(
+            primary_key,
+            response.get("job", response.get("document", response)),
+        )
+
+    def _merge_job_status(
+        self,
+        job_id: str,
+        status: JobStatus | dict[str, Any],
+        job: ParseJob | None,
+    ) -> ParseJob:
+        """Project a lightweight status response onto a ParseJob-shaped object."""
+        if isinstance(status, dict):
+            status = JobStatus.from_dict(status)
+
+        processing_status = status.processing_status
+        processing_error = status.message
+
+        if job is None:
+            return ParseJob(
+                id=job_id,
+                processing_status=processing_status,
+                result_format="",
+                create_time=datetime.now(),
+                update_time=datetime.now(),
+                processing_error=processing_error,
+            )
+
+        return ParseJob(
+            id=job.id,
+            processing_status=processing_status,
+            result_format=job.result_format,
+            name=job.name,
+            uid=job.uid,
+            create_time=job.create_time,
+            update_time=job.update_time,
+            delete_time=job.delete_time,
+            nickname=job.nickname,
+            metadata=job.metadata,
+            processing_options=job.processing_options,
+            processing_time_seconds=job.processing_time_seconds,
+            processing_error=processing_error or job.processing_error,
+            credits_cost=job.credits_cost,
+            input_connector=job.input_connector,
+            output_connector=job.output_connector,
+        )
 
     def _request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
         """Make HTTP request."""
