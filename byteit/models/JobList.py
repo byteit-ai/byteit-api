@@ -36,7 +36,7 @@ class JobList:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "JobList":
         """Create a JobList instance from API response data."""
-        jobs_data = data.get("parse_jobs", data.get("jobs", []))
+        jobs_data = data.get("parse_jobs", data.get("jobs", [])) or []
         jobs = [ParseJob.from_dict(job_data) for job_data in jobs_data]
         return cls(
             jobs=jobs,
