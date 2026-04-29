@@ -1,4 +1,21 @@
 repos:
+  - repo: local
+    hooks:
+      - id: release-preflight
+        name: release preflight checks
+        entry: python scripts/release_preflight.py --pre-commit
+        language: system
+        pass_filenames: false
+        files: ^(pyproject\.toml|byteit/__init__\.py|CHANGELOG\.md)$
+        stages: [pre-commit]
+
+      - id: release-commit-title
+        name: release commit title check
+        entry: python scripts/release_preflight.py --commit-msg
+        language: system
+        pass_filenames: true
+        stages: [commit-msg]
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.2
     hooks:
