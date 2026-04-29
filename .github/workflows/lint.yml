@@ -1,13 +1,9 @@
-name: lint
+name: Lint
 
 on:
-  push:
-    branches:
-      - main
-      - dev
   pull_request:
   workflow_dispatch:
 
 jobs:
   lint:
-    uses: byteit-ai/github-workflows/.github/workflows/lint.yml@main
+    uses: byteit-ai/.github/.github/workflows/lint.yml@main

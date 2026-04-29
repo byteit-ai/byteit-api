@@ -9,10 +9,15 @@ on:
     types: [opened, edited, reopened, synchronize, closed]
   pull_request_review:
     types: [submitted]
+  push:
+    branches: [dev, main]
 
 jobs:
   jira-guard:
-    uses: byteit-ai/github-workflows/.github/workflows/jira-guard.yml@main
+    permissions:
+      pull-requests: read
+      contents: read
+    uses: byteit-ai/.github/.github/workflows/jira-guard.yml@main
     secrets:
       JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
       JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}

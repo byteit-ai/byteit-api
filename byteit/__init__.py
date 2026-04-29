@@ -19,9 +19,11 @@ from .exceptions import (
     ValidationError,
 )
 from .models.DocumentMetadata import DocumentMetadata
-from .models.Job import Job
+from .models.ExtractionType import ExtractionType
 from .models.JobList import JobList
+from .models.JobStatus import JobStatus
 from .models.OutputFormat import OutputFormat
+from .models.ParseJob import ParseJob
 from .models.ProcessingOptions import ProcessingOptions
 from .validations import validate_processing_options
 
@@ -34,15 +36,17 @@ except ImportError:
 try:
     __version__ = version("byteit")
 except PackageNotFoundError:
-    __version__ = "1.0.0"  # fallback, keep in sync with pyproject.toml
+    __version__ = "1.0.1"  # fallback, keep in sync with pyproject.toml
 
 __all__ = [
     "ByteITClient",
-    "Job",
     "JobList",
+    "JobStatus",
     "DocumentMetadata",
     "ProcessingOptions",
+    "ExtractionType",
     "OutputFormat",
+    "ParseJob",
     "InputConnector",
     "OutputConnector",
     "LocalFileInputConnector",
