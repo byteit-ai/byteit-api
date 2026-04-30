@@ -256,6 +256,7 @@ class ByteITClient:
         parse_job_id: str,
         schema: type | dict[str, Any],
         output: None | str | Path = None,
+        extraction_complexity: str = "low",
     ) -> dict[str, Any]:
         """Run extraction on a completed parse job and wait for the result.
 
@@ -270,6 +271,9 @@ class ByteITClient:
                 :class:`~byteit.models.ExtractionSchema.ExtractionSchema`
                 or a raw JSON schema dict defining the fields to extract.
             output: Optional file path to save the JSON result to disk.
+            extraction_complexity: Complexity tier for the extraction.
+                One of ``"low"``, ``"medium"``, or ``"high"``.
+                Defaults to ``"low"``.
 
         Returns:
             Extracted fields as a dictionary matching the provided schema.
@@ -283,9 +287,11 @@ class ByteITClient:
                 invoice_number: str | None = Field(description="Invoice number.")
                 total_amount: str | None = Field(description="Total amount due.")
 
-            result = client.extract(parse_job_id, InvoiceSchema)
+            result = client.extract(
+                parse_job_id, InvoiceSchema, extraction_complexity="medium"
+            )
         """
-        job = self._create_extract_job(parse_job_id, schema)
+        job = self._create_extract_job(parse_job_id, schema, extraction_complexity)
         print(f"Extraction job {job.id} created. Waiting for completion...")
         self._wait_for_extract_completion(job.id, job)
 
@@ -302,6 +308,7 @@ class ByteITClient:
         self,
         parse_job_id: str,
         schema: type | dict[str, Any],
+        extraction_complexity: str = "low",
     ) -> ExtractJob:
         """Submit a structured field extraction job and return immediately.
 
@@ -315,19 +322,24 @@ class ByteITClient:
             schema: A subclass of
                 :class:`~byteit.models.ExtractionSchema.ExtractionSchema`
                 or a raw JSON schema dict defining the fields to extract.
+            extraction_complexity: Complexity tier for the extraction.
+                One of ``"low"``, ``"medium"``, or ``"high"``.
+                Defaults to ``"low"``.
 
         Returns:
             ExtractJob object with ``id`` and ``processing_status``.
 
         Example::
 
-            job = client.extract_async(parse_job_id, InvoiceSchema)
+            job = client.extract_async(
+                parse_job_id, InvoiceSchema, extraction_complexity="high"
+            )
             # ... do other work ...
             status = client.get_job_status(job.id)
             if status.is_completed:
                 result = client.get_extract_job_result(job.id)
         """
-        job = self._create_extract_job(parse_job_id, schema)
+        job = self._create_extract_job(parse_job_id, schema, extraction_complexity)
         print(f"Extraction job {job.id} submitted.")
         return job
 
@@ -398,13 +410,14 @@ class ByteITClient:
         self,
         parse_job_id: str,
         schema: type | dict[str, Any],
+        extraction_complexity: str = "low",
     ) -> ExtractJob:
         """Submit a new extraction job for an existing parse job."""
         schema_dict = self._build_schema_dict(schema)
         response = self._request(
             "POST",
             self._build_job_resource_path(parse_job_id, EXTRACT_JOBS_PATH),
-            json={"schema": schema_dict},
+            json={"schema": schema_dict, "extraction_complexity": extraction_complexity},
         )
         job_data = self._extract_job_data(response, primary_key="extract_job")
         return ExtractJob.from_dict(job_data)
