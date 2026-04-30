@@ -20,6 +20,7 @@ from .exceptions import (
 )
 from .models.DocumentMetadata import DocumentMetadata
 from .models.ExtractionType import ExtractionType
+from .models.ExtractJob import ExtractJob
 from .models.JobList import JobList
 from .models.JobStatus import JobStatus
 from .models.OutputFormat import OutputFormat
@@ -38,6 +39,13 @@ try:
 except PackageNotFoundError:
     __version__ = "1.0.1"  # fallback, keep in sync with pyproject.toml
 
+try:
+    from .models.ExtractionSchema import ExtractionSchema  # noqa: F401
+
+    __all_extraction_schema__ = ["ExtractionSchema"]
+except ImportError:
+    __all_extraction_schema__ = []
+
 __all__ = [
     "ByteITClient",
     "JobList",
@@ -45,6 +53,7 @@ __all__ = [
     "DocumentMetadata",
     "ProcessingOptions",
     "ExtractionType",
+    "ExtractJob",
     "OutputFormat",
     "ParseJob",
     "InputConnector",
@@ -61,4 +70,5 @@ __all__ = [
     "ServerError",
     "NetworkError",
     "JobProcessingError",
+    *__all_extraction_schema__,
 ]
