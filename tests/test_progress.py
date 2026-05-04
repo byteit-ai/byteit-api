@@ -36,7 +36,7 @@ def test_progress_message_ranges():  # noqa: D103
     assert tracker._progress_message(89.9) == "Post-processing"
     assert (
         tracker._progress_message(90)
-        == "Delayed due to high load. Wait or check later with get_parse_job_result(job_id)."
+        == "Delayed due to high load. Check later with get_parse_job_result(job_id)."
     )
 
 
@@ -85,7 +85,7 @@ def test_finalize_completes_bar():  # noqa: D103
     assert tracker._bar.total_updates == 10.0
     assert (
         tracker._bar.description
-        == "Delayed due to high load. Wait or check later with get_parse_job_result(job_id)."
+        == "Delayed due to high load. Check later with get_parse_job_result(job_id)."
     )
     assert tracker._bar.closed is True
 
@@ -124,7 +124,7 @@ def test_progress_does_not_exceed_90_during_processing():
     assert tracker._bar.total_updates == 90.0
     assert (
         tracker._bar.description
-        == "Delayed due to high load. Wait or check later with get_parse_job_result(job_id)."
+        == "Delayed due to high load. Check later with get_parse_job_result(job_id)."
     )
 
 
