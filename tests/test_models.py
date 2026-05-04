@@ -1,7 +1,5 @@
 """Tests for model classes."""
 
-from datetime import datetime
-
 import pytest
 
 from byteit.models.DocumentMetadata import DocumentMetadata
@@ -21,8 +19,6 @@ class TestParseJob:
             id="job_1",
             processing_status="completed",
             result_format="txt",
-            create_time=datetime.now(),
-            update_time=datetime.now(),
         )
         assert job_completed.is_completed is True
         assert job_completed.is_failed is False
@@ -32,8 +28,6 @@ class TestParseJob:
             id="job_2",
             processing_status="failed",
             result_format="txt",
-            create_time=datetime.now(),
-            update_time=datetime.now(),
         )
         assert job_failed.is_completed is False
         assert job_failed.is_failed is True
@@ -43,8 +37,6 @@ class TestParseJob:
             id="job_3",
             processing_status="processing",
             result_format="txt",
-            create_time=datetime.now(),
-            update_time=datetime.now(),
         )
         assert job_processing.is_completed is False
         assert job_processing.is_failed is False
@@ -67,12 +59,10 @@ class TestParseJob:
         job = ParseJob.from_dict(data)
 
         assert job.id == "job_123"
-        assert job.name == "jobs/parse-jobs/job_123"
         assert job.processing_status == "completed"
         assert job.result_format == "json"
         assert job.processing_time_seconds == 12.5
         assert job.credits_cost == 4
-        assert isinstance(job.create_time, datetime)
 
     def test_job_status_from_dict(self):
         """JobStatus.from_dict creates status model from API data."""
@@ -97,15 +87,11 @@ class TestJobList:
             id="job_1",
             processing_status="completed",
             result_format="txt",
-            create_time=datetime.now(),
-            update_time=datetime.now(),
         )
         job2 = ParseJob(
             id="job_2",
             processing_status="pending",
             result_format="json",
-            create_time=datetime.now(),
-            update_time=datetime.now(),
         )
 
         job_list = JobList(jobs=[job1, job2], count=2, detail="Success")

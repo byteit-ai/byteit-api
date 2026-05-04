@@ -2,7 +2,6 @@
 
 import json
 import time
-from datetime import datetime
 from pathlib import Path
 from types import TracebackType
 from typing import Any
@@ -26,6 +25,7 @@ from .exceptions import (
     ValidationError,
 )
 from .models.ExtractJob import ExtractJob
+from .models.ExtractJobList import ExtractJobList
 from .models.JobList import JobList
 from .models.JobStatus import JobStatus
 from .models.OutputFormat import OutputFormat
@@ -47,12 +47,15 @@ class ByteITClient:
     Provides both synchronous and asynchronous document parsing workflows.
 
     Methods:
-        parse(input, ...):           Parse a document and wait for the result.
-        parse_async(input, ...):     Submit a document for parsing, return.
-        get_job_details(job_id):     Get the full parse-job resource.
-        get_job_status(job_id):      Check the lightweight processing status.
-        get_job_result(job_id):      Download the result of a completed job.
-        get_jobs():                  List all jobs for your account.
+        parse(input, ...):                Parse a document and wait for the result.
+        parse_async(input, ...):          Submit a document for parsing, return.
+        get_parse_job_details(job_id):    Get the full parse-job resource.
+        get_job_status(job_id):           Check the lightweight processing status.
+        get_parse_job_result(job_id):     Download the result of a completed job.
+        get_parse_jobs():                 List all parse jobs for your account.
+        get_extract_jobs():               List all extract jobs for your account.
+        get_extract_job_details(job_id):  Get the full extract-job resource.
+        get_extract_job_result(job_id):   Download the result of a completed extraction.
 
     Examples:
         Synchronous (blocking)::
@@ -65,8 +68,8 @@ class ByteITClient:
             job = client.parse_async("document.pdf") # ... do other work ...
             status = client.get_job_status(job.id)
             if status.is_completed:
-                details = client.get_job_details(job.id)
-                result = client.get_job_result(details.id)
+                details = client.get_parse_job_details(job.id)
+                result = client.get_parse_job_result(details.id)
     """
 
     # BASE_URL = "https://api.byteit.ai"
@@ -134,7 +137,7 @@ class ByteITClient:
         self._wait_for_completion(job.id, input_connector=input_connector, job=job)
 
         # Download result
-        result_bytes = self._download_result(job.id)
+        result_bytes = self._download_parse_result(job.id)
 
         # If output is a file path, save it
         if isinstance(output, (str, Path)):
@@ -153,8 +156,8 @@ class ByteITClient:
         """Submit a document for parsing and return immediately.
 
         Use this for non-blocking workflows. Check progress with
-        :meth:`get_job_status`, inspect metadata with :meth:`get_job_details`,
-        and retrieve results with :meth:`get_job_result`.
+        :meth:`get_job_status`, inspect metadata with :meth:`get_parse_job_details`,
+        and retrieve results with :meth:`get_parse_job_result`.
 
         Args:
             input: File path (str/Path) or InputConnector.
@@ -175,28 +178,28 @@ class ByteITClient:
             # ... do other work ...
             status = client.get_job_status(job.id)
             if status.is_completed:
-                result = client.get_job_result(job.id)
+                result = client.get_parse_job_result(job.id)
         """
         result_format = self._parse_output_format(result_format)
         job, _ = self._submit_job(input, processing_options, result_format)
         print(f"Job {job.id} submitted.")
         return job
 
-    def get_jobs(self) -> JobList:
-        """List all jobs for your account.
+    def get_parse_jobs(self) -> JobList:
+        """List all parse jobs for your account.
 
         Returns:
-            JobList response with collection metadata and jobs.
+            JobList response with collection metadata and parse jobs.
 
         Example::
 
-            job_list = client.get_jobs()
+            job_list = client.get_parse_jobs()
             for job in job_list.jobs:
                 print(f"{job.id}: {job.processing_status}")
         """
-        return self._list_jobs()
+        return self._list_parse_jobs()
 
-    def get_job_details(self, job_id: str) -> ParseJob:
+    def get_parse_job_details(self, job_id: str) -> ParseJob:
         """Get the full parse-job resource for a job.
 
         Args:
@@ -207,10 +210,10 @@ class ByteITClient:
 
         Example::
 
-            job = client.get_job_details("job_123")
+            job = client.get_parse_job_details("job_123")
             print(job.result_format)
         """
-        return self._get_job_details(job_id)
+        return self._get_parse_job_details(job_id)
 
     def get_job_status(self, job_id: str) -> JobStatus:
         """Check the lightweight processing status of a job.
@@ -225,12 +228,12 @@ class ByteITClient:
 
             status = client.get_job_status("job_123")
             if status.is_completed:
-                result = client.get_job_result("job_123")
+                result = client.get_parse_job_result("job_123")
         """
         return self._get_job_status(job_id)
 
-    def get_job_result(self, job_id: str) -> bytes:
-        """Download the result of a completed job.
+    def get_parse_job_result(self, job_id: str) -> bytes:
+        """Download the result of a completed parse job.
 
         Args:
             job_id: The job ID.
@@ -243,11 +246,11 @@ class ByteITClient:
 
         Example::
 
-            result = client.get_job_result("job_123")
+            result = client.get_parse_job_result("job_123")
             with open("output.md", "wb") as f:
                 f.write(result)
         """
-        return self._download_result(job_id)
+        return self._download_parse_result(job_id)
 
     # ==================== EXTRACTION PUBLIC API ====================
 
@@ -343,6 +346,20 @@ class ByteITClient:
         print(f"Extraction job {job.id} submitted.")
         return job
 
+    def get_extract_jobs(self) -> ExtractJobList:
+        """List all extraction jobs for your account.
+
+        Returns:
+            ExtractJobList with collection metadata and extract jobs.
+
+        Example::
+
+            job_list = client.get_extract_jobs()
+            for job in job_list.jobs:
+                print(f"{job.id}: {job.processing_status}")
+        """
+        return self._list_extract_jobs()
+
     def get_extract_job_details(self, job_id: str) -> ExtractJob:
         """Get the full extract-job resource.
 
@@ -422,6 +439,13 @@ class ByteITClient:
         job_data = self._extract_job_data(response, primary_key="extract_job")
         return ExtractJob.from_dict(job_data)
 
+    def _list_extract_jobs(self) -> ExtractJobList:
+        """List all extract jobs."""
+        response = self._request(
+            "GET", self._build_job_collection_path(EXTRACT_JOBS_PATH)
+        )
+        return ExtractJobList.from_dict(response)
+
     def _get_extract_job_details(self, job_id: str) -> ExtractJob:
         """Get current extract-job details."""
         response = self._request(
@@ -432,11 +456,10 @@ class ByteITClient:
 
     def _download_extract_result(self, job_id: str) -> dict[str, Any]:
         """Download the JSON result of a completed extraction job."""
-        response = self._request(
+        data = self._request(
             "GET", self._build_job_result_path(job_id, EXTRACT_JOBS_PATH)
         )
-
-        data = response.json()
+        data = data if isinstance(data, dict) else {}
         if not data.get("ready", True):
             status = data.get("processing_status", "unknown")
             raise JobProcessingError(f"Result not available. Job status: {status}")
@@ -456,14 +479,12 @@ class ByteITClient:
             job_snapshot = ExtractJob(
                 id=job_snapshot.id,
                 processing_status=status.processing_status,
-                name=job_snapshot.name,
-                uid=job_snapshot.uid,
-                create_time=job_snapshot.create_time,
-                update_time=job_snapshot.update_time,
-                delete_time=job_snapshot.delete_time,
-                input_storage_path=job_snapshot.input_storage_path,
-                output_storage_path=job_snapshot.output_storage_path,
-                processing_error=status.message or job_snapshot.processing_error,
+                input_job_id=job_snapshot.input_job_id,
+                nickname=job_snapshot.nickname,
+                processing_time_seconds=job_snapshot.processing_time_seconds,
+                credits_cost=job_snapshot.credits_cost,
+                extraction_schema=job_snapshot.extraction_schema,
+                extraction_complexity=job_snapshot.extraction_complexity,
             )
 
             if status.is_completed:
@@ -471,8 +492,7 @@ class ByteITClient:
 
             if status.is_failed:
                 raise JobProcessingError(
-                    f"Extraction job failed: "
-                    f"{job_snapshot.processing_error or 'Unknown error'}"
+                    f"Extraction job failed: {status.message or 'Unknown error'}"
                 )
 
             poll_interval = min(1 * (1.5 ** (iteration - 1)), 10)
@@ -594,12 +614,12 @@ class ByteITClient:
 
         # Return job from response
         if "job_id" in response:
-            return self._get_job_details(response["job_id"])
+            return self._get_parse_job_details(response["job_id"])
 
         job_data = self._extract_job_data(response, primary_key="parse_job")
         return ParseJob.from_dict(job_data)
 
-    def _get_job_details(self, job_id: str) -> ParseJob:
+    def _get_parse_job_details(self, job_id: str) -> ParseJob:
         """Get current parse-job details."""
         response = self._request(
             "GET", self._build_job_resource_path(job_id, PARSE_JOBS_PATH)
@@ -616,8 +636,8 @@ class ByteITClient:
         """Backward-compatible alias for the lightweight status endpoint."""
         return self._get_job_status(job_id)
 
-    def _list_jobs(self) -> JobList:
-        """List all jobs."""
+    def _list_parse_jobs(self) -> JobList:
+        """List all parse jobs."""
         response = self._request("GET", self._build_job_collection_path(PARSE_JOBS_PATH))
         return JobList.from_dict(response)
 
@@ -653,8 +673,8 @@ class ByteITClient:
             time.sleep(poll_interval)
             iteration += 1
 
-    def _download_result(self, job_id: str) -> bytes:
-        """Download job result."""
+    def _download_parse_result(self, job_id: str) -> bytes:
+        """Download parse job result."""
         url = self._build_url(self._build_job_result_path(job_id, PARSE_JOBS_PATH))
         response = self._session.get(url, timeout=self.DEFAULT_TIMEOUT)
         response.raise_for_status()
@@ -731,8 +751,6 @@ class ByteITClient:
                 id=job_id,
                 processing_status=processing_status,
                 result_format="",
-                create_time=datetime.now(),
-                update_time=datetime.now(),
                 processing_error=processing_error,
             )
 
@@ -740,11 +758,6 @@ class ByteITClient:
             id=job.id,
             processing_status=processing_status,
             result_format=job.result_format,
-            name=job.name,
-            uid=job.uid,
-            create_time=job.create_time,
-            update_time=job.update_time,
-            delete_time=job.delete_time,
             nickname=job.nickname,
             metadata=job.metadata,
             processing_options=job.processing_options,

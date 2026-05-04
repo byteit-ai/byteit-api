@@ -79,20 +79,20 @@ class TestIntegrationParse:
 class TestIntegrationJobs:
     """Integration tests for job management."""
 
-    def test_get_jobs(self, client):
-        """List all jobs."""
-        job_list = client.get_jobs()
+    def test_get_parse_jobs(self, client):
+        """List all parse jobs."""
+        job_list = client.get_parse_jobs()
         assert hasattr(job_list, "jobs")
 
-    def test_get_job_details(self, client, sample_file):
-        """Get specific job details by ID."""
+    def test_get_parse_job_details(self, client, sample_file):
+        """Get specific parse job details by ID."""
         # Create a job first
         result = client.parse(str(sample_file))  # noqa: F841
 
         # Get all jobs and find the one we just created
-        job_list = client.get_jobs()
+        job_list = client.get_parse_jobs()
         if job_list.jobs:
-            job = client.get_job_details(job_list.jobs[0].id)
+            job = client.get_parse_job_details(job_list.jobs[0].id)
             assert job.id == job_list.jobs[0].id
 
 
