@@ -66,8 +66,12 @@ class ExtractJob:
         Returns:
             A populated ExtractJob instance.
         """
+        job_id = data.get("id") or data.get("job_id")
+        if not job_id:
+            raise KeyError("Extract job response is missing required field: id")
+
         return cls(
-            id=data.get("id") or data.get("job_id", ""),
+            id=job_id,
             processing_status=data.get("processing_status", "pending"),
             name=data.get("name"),
             uid=data.get("uid"),
