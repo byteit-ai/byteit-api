@@ -432,9 +432,9 @@ class ByteITClient:
 
     def _download_extract_result(self, job_id: str) -> dict[str, Any]:
         """Download the JSON result of a completed extraction job."""
-        url = self._build_url(self._build_job_result_path(job_id, EXTRACT_JOBS_PATH))
-        response = self._session.get(url, timeout=self.DEFAULT_TIMEOUT)
-        response.raise_for_status()
+        response = self._request(
+            "GET", self._build_job_result_path(job_id, EXTRACT_JOBS_PATH)
+        )
 
         data = response.json()
         if not data.get("ready", True):
