@@ -37,7 +37,7 @@ except ImportError:
 try:
     __version__ = version("byteit")
 except PackageNotFoundError:
-    __version__ = "1.0.0"  # fallback, keep in sync with pyproject.toml
+    __version__ = "1.0.1"  # fallback, keep in sync with pyproject.toml
 
 try:
     from .models.ExtractionSchema import ExtractionSchema  # noqa: F401
