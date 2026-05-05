@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 import requests
+from pydantic import Field
 
 from byteit import ByteITClient
 from byteit.connectors import LocalFileInputConnector
@@ -17,7 +18,9 @@ from byteit.exceptions import (
     ServerError,
     ValidationError,
 )
+from byteit.models.ExtractionSchema import ExtractionSchema
 from byteit.models.ExtractionType import ExtractionType
+from byteit.models.ExtractJob import ExtractJob
 from byteit.models.OutputFormat import OutputFormat
 from byteit.models.ParseJob import ParseJob
 from byteit.models.ProcessingOptions import ProcessingOptions
@@ -859,3 +862,422 @@ class TestDisplayResult:
         # Remove IPython from sys.modules to simulate it not being installed
         with patch.dict(sys.modules, {"IPython": None, "IPython.display": None}):
             client._try_display_result(b"test", OutputFormat.TXT)  # must not raise
+
+
+# ---------------------------------------------------------------------------
+# Helpers shared by extraction tests
+# ---------------------------------------------------------------------------
+
+
+def _make_extract_job(
+    job_id: str = "ext_123",
+    status: str = "pending",
+) -> ExtractJob:
+    """Build a minimal ExtractJob for use in tests."""
+    return ExtractJob(id=job_id, processing_status=status)
+
+
+class _InvoiceSchema(ExtractionSchema):
+    """Minimal ExtractionSchema subclass for testing."""
+
+    invoice_number: str | None = Field(description="Invoice number.")
+    total_amount: str | None = Field(description="Total amount due.")
+
+
+# ---------------------------------------------------------------------------
+# Schema building
+# ---------------------------------------------------------------------------
+
+
+class TestBuildSchemaDict:
+    """Test _build_schema_dict — converts schema inputs to API payload dicts."""
+
+    def test_raw_dict_passthrough(self):
+        """Raw dict schema passes through unchanged."""
+        client = ByteITClient("test_key")
+        schema = {"type": "object", "properties": {"field": {"type": "string"}}}
+
+        result = client._build_schema_dict(schema)
+
+        assert result is schema
+
+    def test_extraction_schema_subclass_calls_build_api_schema(self):
+        """ExtractionSchema subclass uses build_api_schema."""
+        client = ByteITClient("test_key")
+
+        result = client._build_schema_dict(_InvoiceSchema)
+
+        assert result["type"] == "object"
+        assert "invoice_number" in result["properties"]
+        assert "total_amount" in result["properties"]
+        # 'title' keys are pruned by ExtractionSchema.build_api_schema
+        assert "title" not in result
+
+    def test_plain_pydantic_model_falls_back_to_model_json_schema(self):
+        """Plain Pydantic model (no build_api_schema) uses model_json_schema."""
+        client = ByteITClient("test_key")
+
+        # A class with model_json_schema but without build_api_schema
+        mock_schema = Mock(spec=["model_json_schema"])
+        mock_schema.model_json_schema.return_value = {"type": "object"}
+
+        result = client._build_schema_dict(mock_schema)
+
+        assert result == {"type": "object"}
+        mock_schema.model_json_schema.assert_called_once()
+
+    def test_unsupported_type_raises_validation_error(self):
+        """Object without schema methods raises ValidationError."""
+        client = ByteITClient("test_key")
+
+        with pytest.raises(ValidationError, match="schema must be a dict"):
+            client._build_schema_dict(object())
+
+
+# ---------------------------------------------------------------------------
+# Extraction endpoint routing
+# ---------------------------------------------------------------------------
+
+
+class TestExtractionEndpointRouting:
+    """Test that extraction methods use the correct API paths."""
+
+    @patch.object(ByteITClient, "_request")
+    def test_create_extract_job_posts_to_correct_endpoint(self, mock_request):
+        """_create_extract_job POSTs to /v1/jobs/parse-jobs/<id>/extract-jobs/."""
+        client = ByteITClient("test_key")
+        mock_request.return_value = {
+            "extract_job": {"id": "ext_123", "processing_status": "pending"}
+        }
+
+        client._create_extract_job("parse_456", _InvoiceSchema, "low")
+
+        mock_request.assert_called_once_with(
+            "POST",
+            "/v1/jobs/extract-jobs/parse_456/",
+            json={
+                "schema": client._build_schema_dict(_InvoiceSchema),
+                "extraction_complexity": "low",
+            },
+        )
+
+    @patch.object(ByteITClient, "_request")
+    def test_get_extract_job_details_reads_correct_endpoint(self, mock_request):
+        """_get_extract_job_details GETs /v1/jobs/extract-jobs/<id>/."""
+        client = ByteITClient("test_key")
+        mock_request.return_value = {
+            "extract_job": {"id": "ext_123", "processing_status": "completed"}
+        }
+
+        job = client._get_extract_job_details("ext_123")
+
+        assert job.id == "ext_123"
+        mock_request.assert_called_once_with("GET", "/v1/jobs/extract-jobs/ext_123/")
+
+    def test_get_extract_job_details_public_api_delegates(self):
+        """get_extract_job_details delegates to _get_extract_job_details."""
+        client = ByteITClient("test_key")
+        mock_job = _make_extract_job()
+
+        with patch.object(
+            client, "_get_extract_job_details", return_value=mock_job
+        ) as mock_internal:
+            result = client.get_extract_job_details("ext_123")
+
+        assert result is mock_job
+        mock_internal.assert_called_once_with("ext_123")
+
+
+# ---------------------------------------------------------------------------
+# extract() — blocking workflow
+# ---------------------------------------------------------------------------
+
+
+class TestExtract:
+    """Test the blocking extract() public method."""
+
+    @patch.object(ByteITClient, "_download_extract_result")
+    @patch.object(ByteITClient, "_wait_for_extract_completion")
+    @patch.object(ByteITClient, "_create_extract_job")
+    def test_extract_returns_dict(self, mock_create, mock_wait, mock_download):
+        """extract() creates job, waits, downloads, and returns dict."""
+        client = ByteITClient("test_key")
+        mock_job = _make_extract_job()
+        mock_create.return_value = mock_job
+        mock_download.return_value = {"invoice_number": "INV-001"}
+
+        result = client.extract("parse_123", _InvoiceSchema)
+
+        assert result == {"invoice_number": "INV-001"}
+        mock_create.assert_called_once_with("parse_123", _InvoiceSchema, "low")
+        mock_wait.assert_called_once_with(mock_job.id, mock_job)
+        mock_download.assert_called_once_with(mock_job.id)
+
+    @patch.object(ByteITClient, "_download_extract_result")
+    @patch.object(ByteITClient, "_wait_for_extract_completion")
+    @patch.object(ByteITClient, "_create_extract_job")
+    @patch("pathlib.Path.write_text")
+    def test_extract_saves_to_file(
+        self, mock_write, mock_create, _mock_wait, mock_download
+    ):
+        """extract() with an output path writes the JSON result to disk."""
+        client = ByteITClient("test_key")
+        mock_create.return_value = _make_extract_job()
+        mock_download.return_value = {"total": "100"}
+
+        client.extract("parse_123", _InvoiceSchema, output="out.json")
+
+        mock_write.assert_called_once()
+        written_content = mock_write.call_args[0][0]
+        assert '"total"' in written_content
+        assert '"100"' in written_content
+
+    @patch.object(ByteITClient, "_download_extract_result")
+    @patch.object(ByteITClient, "_wait_for_extract_completion")
+    @patch.object(ByteITClient, "_create_extract_job")
+    def test_extract_forwards_complexity(self, mock_create, _mock_wait, mock_download):
+        """extract() passes extraction_complexity to _create_extract_job."""
+        client = ByteITClient("test_key")
+        mock_create.return_value = _make_extract_job()
+        mock_download.return_value = {}
+
+        client.extract("parse_123", _InvoiceSchema, extraction_complexity="high")
+
+        mock_create.assert_called_once_with("parse_123", _InvoiceSchema, "high")
+
+
+# ---------------------------------------------------------------------------
+# extract_async() — non-blocking workflow
+# ---------------------------------------------------------------------------
+
+
+class TestExtractAsync:
+    """Test the non-blocking extract_async() public method."""
+
+    @patch.object(ByteITClient, "_create_extract_job")
+    def test_extract_async_returns_extract_job(self, mock_create):
+        """extract_async() returns ExtractJob without waiting."""
+        client = ByteITClient("test_key")
+        mock_job = _make_extract_job()
+        mock_create.return_value = mock_job
+
+        result = client.extract_async("parse_123", _InvoiceSchema)
+
+        assert result is mock_job
+        mock_create.assert_called_once_with("parse_123", _InvoiceSchema, "low")
+
+    @patch.object(ByteITClient, "_create_extract_job")
+    def test_extract_async_does_not_wait_or_download(self, mock_create):
+        """extract_async() never calls wait or download methods."""
+        client = ByteITClient("test_key")
+        mock_create.return_value = _make_extract_job()
+
+        with (
+            patch.object(client, "_wait_for_extract_completion") as mock_wait,
+            patch.object(client, "_download_extract_result") as mock_download,
+        ):
+            client.extract_async("parse_123", _InvoiceSchema)
+            mock_wait.assert_not_called()
+            mock_download.assert_not_called()
+
+    @patch.object(ByteITClient, "_create_extract_job")
+    def test_extract_async_forwards_complexity(self, mock_create):
+        """extract_async() passes extraction_complexity through."""
+        client = ByteITClient("test_key")
+        mock_create.return_value = _make_extract_job()
+
+        client.extract_async("parse_123", _InvoiceSchema, extraction_complexity="medium")
+
+        mock_create.assert_called_once_with("parse_123", _InvoiceSchema, "medium")
+
+
+# ---------------------------------------------------------------------------
+# _wait_for_extract_completion — polling behaviour
+# ---------------------------------------------------------------------------
+
+
+class TestWaitForExtractCompletion:
+    """Test polling logic inside _wait_for_extract_completion."""
+
+    @patch.object(ByteITClient, "_get_job_status")
+    @patch("time.sleep")
+    def test_returns_on_first_completed_poll(self, mock_sleep, mock_status):
+        """Returns immediately when the first poll is already completed."""
+        client = ByteITClient("test_key")
+        mock_status.return_value = Mock(
+            processing_status="completed",
+            is_completed=True,
+            is_failed=False,
+            message=None,
+        )
+        job = _make_extract_job()
+
+        result = client._wait_for_extract_completion(job.id, job)
+
+        assert result.processing_status == "completed"
+        mock_sleep.assert_not_called()
+
+    @patch.object(ByteITClient, "_get_job_status")
+    @patch("time.sleep")
+    def test_polls_until_completed(self, mock_sleep, mock_status):
+        """Continues polling until the job completes."""
+        client = ByteITClient("test_key")
+        pending = Mock(
+            processing_status="processing",
+            is_completed=False,
+            is_failed=False,
+            message=None,
+        )
+        completed = Mock(
+            processing_status="completed",
+            is_completed=True,
+            is_failed=False,
+            message=None,
+        )
+        mock_status.side_effect = [pending, pending, completed]
+        job = _make_extract_job()
+
+        result = client._wait_for_extract_completion(job.id, job)
+
+        assert result.processing_status == "completed"
+        assert mock_status.call_count == 3
+        assert mock_sleep.call_count == 2
+
+    @patch.object(ByteITClient, "_get_job_status")
+    def test_raises_on_failed_job(self, mock_status):
+        """Raises JobProcessingError when the extraction job fails."""
+        client = ByteITClient("test_key")
+        mock_status.return_value = Mock(
+            processing_status="failed",
+            is_completed=False,
+            is_failed=True,
+            message="OCR error",
+        )
+        job = _make_extract_job()
+
+        with pytest.raises(JobProcessingError, match="Extraction job failed"):
+            client._wait_for_extract_completion(job.id, job)
+
+    @patch.object(ByteITClient, "_get_job_status")
+    @patch("time.sleep")
+    def test_adaptive_polling_intervals(self, mock_sleep, mock_status):
+        """Polling intervals follow MIN(1*1.5^(x-1), 10) formula."""
+        client = ByteITClient("test_key")
+        pending = Mock(
+            processing_status="processing",
+            is_completed=False,
+            is_failed=False,
+            message=None,
+        )
+        completed = Mock(
+            processing_status="completed",
+            is_completed=True,
+            is_failed=False,
+            message=None,
+        )
+        mock_status.side_effect = [pending, pending, pending, completed]
+        job = _make_extract_job()
+
+        client._wait_for_extract_completion(job.id, job)
+
+        intervals = [call[0][0] for call in mock_sleep.call_args_list]
+        assert intervals == [1.0, 1.5, 2.25]
+
+    @patch.object(ByteITClient, "_get_job_status")
+    @patch("time.sleep")
+    def test_polling_interval_capped_at_ten_seconds(self, mock_sleep, mock_status):
+        """Polling interval is capped at 10 seconds."""
+        client = ByteITClient("test_key")
+        pending = Mock(
+            processing_status="processing",
+            is_completed=False,
+            is_failed=False,
+            message=None,
+        )
+        completed = Mock(
+            processing_status="completed",
+            is_completed=True,
+            is_failed=False,
+            message=None,
+        )
+        # 8 pending polls — enough for the exponential formula to exceed 10 s
+        mock_status.side_effect = [pending] * 8 + [completed]
+        job = _make_extract_job()
+
+        client._wait_for_extract_completion(job.id, job)
+
+        intervals = [call[0][0] for call in mock_sleep.call_args_list]
+        assert all(interval <= 10 for interval in intervals)
+        assert intervals[-1] == 10
+
+
+# ---------------------------------------------------------------------------
+# _download_extract_result — result download and error handling
+# ---------------------------------------------------------------------------
+
+
+class TestDownloadExtractResult:
+    """Test _download_extract_result for happy path and error cases."""
+
+    def test_returns_result_dict_on_success(self):
+        """Returns the 'result' dict when the job is ready."""
+        client = ByteITClient("test_key")
+        response = Mock(spec=requests.Response)
+        response.status_code = 200
+        response.json.return_value = {"ready": True, "result": {"invoice": "INV-1"}}
+
+        with patch.object(client._session, "get", return_value=response):
+            result = client._download_extract_result("ext_123")
+
+        assert result == {"invoice": "INV-1"}
+
+    def test_returns_full_response_when_no_result_key(self):
+        """Returns full response dict when 'result' key is absent."""
+        client = ByteITClient("test_key")
+        response = Mock(spec=requests.Response)
+        response.status_code = 200
+        response.json.return_value = {"invoice": "INV-2"}
+
+        with patch.object(client._session, "get", return_value=response):
+            result = client._download_extract_result("ext_123")
+
+        assert result == {"invoice": "INV-2"}
+
+    def test_raises_when_not_ready(self):
+        """Raises JobProcessingError when the response signals not-ready."""
+        client = ByteITClient("test_key")
+        response = Mock(spec=requests.Response)
+        response.status_code = 200
+        response.json.return_value = {"ready": False, "processing_status": "processing"}
+
+        with (
+            patch.object(client._session, "get", return_value=response),
+            pytest.raises(JobProcessingError, match="Result not available"),
+        ):
+            client._download_extract_result("ext_123")
+
+    def test_get_extract_job_result_delegates_to_download(self):
+        """get_extract_job_result() delegates to _download_extract_result."""
+        client = ByteITClient("test_key")
+        expected = {"field": "value"}
+
+        with patch.object(
+            client, "_download_extract_result", return_value=expected
+        ) as mock_dl:
+            result = client.get_extract_job_result("ext_123")
+
+        assert result is expected
+        mock_dl.assert_called_once_with("ext_123")
+
+    def test_download_uses_correct_url(self):
+        """Download hits /v1/jobs/extract-jobs/<id>/result/."""
+        client = ByteITClient("test_key")
+        response = Mock(spec=requests.Response)
+        response.status_code = 200
+        response.json.return_value = {"invoice": "x"}
+
+        with patch.object(client._session, "get", return_value=response) as mock_get:
+            client._download_extract_result("ext_789")
+
+        called_url = mock_get.call_args[0][0]
+        assert "/v1/jobs/extract-jobs/ext_789/result/" in called_url
