@@ -394,6 +394,134 @@ class ByteITClient:
         """
         return self._download_extract_result(job_id)
 
+    # ==================== EXTRACTION PUBLIC API ====================
+
+    def extract(
+        self,
+        parse_job_id: str,
+        schema: type | dict[str, Any],
+        output: None | str | Path = None,
+        extraction_complexity: str = "low",
+    ) -> dict[str, Any]:
+        """Run extraction on a completed parse job and wait for the result.
+
+        Submits an extraction job against an existing parse job, polls until
+        processing completes, and returns the extracted fields as a dictionary.
+        For non-blocking usage, see :meth:`extract_async`.
+
+        Args:
+            parse_job_id: ID of a completed
+                :class:`~byteit.models.ParseJob.ParseJob` to extract from.
+            schema: A subclass of
+                :class:`~byteit.models.ExtractionSchema.ExtractionSchema`
+                or a raw JSON schema dict defining the fields to extract.
+            output: Optional file path to save the JSON result to disk.
+            extraction_complexity: Complexity tier for the extraction.
+                One of ``"low"``, ``"medium"``, or ``"high"``.
+                Defaults to ``"low"``.
+
+        Returns:
+            Extracted fields as a dictionary matching the provided schema.
+
+        Example::
+
+            from byteit import ExtractionSchema
+            from pydantic import Field
+
+            class InvoiceSchema(ExtractionSchema):
+                invoice_number: str | None = Field(description="Invoice number.")
+                total_amount: str | None = Field(description="Total amount due.")
+
+            result = client.extract(
+                parse_job_id, InvoiceSchema, extraction_complexity="medium"
+            )
+        """
+        job = self._create_extract_job(parse_job_id, schema, extraction_complexity)
+        print(f"Extraction job {job.id} created. Waiting for completion...")
+        self._wait_for_extract_completion(job.id, job)
+
+        result = self._download_extract_result(job.id)
+
+        if isinstance(output, (str, Path)):
+            Path(output).write_text(
+                json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+
+        return result
+
+    def extract_async(
+        self,
+        parse_job_id: str,
+        schema: type | dict[str, Any],
+        extraction_complexity: str = "low",
+    ) -> ExtractJob:
+        """Submit a structured field extraction job and return immediately.
+
+        Use this for non-blocking workflows. Check progress with
+        :meth:`get_job_status`, and retrieve results with
+        :meth:`get_extract_job_result`.
+
+        Args:
+            parse_job_id: ID of a completed
+                :class:`~byteit.models.ParseJob.ParseJob` to extract from.
+            schema: A subclass of
+                :class:`~byteit.models.ExtractionSchema.ExtractionSchema`
+                or a raw JSON schema dict defining the fields to extract.
+            extraction_complexity: Complexity tier for the extraction.
+                One of ``"low"``, ``"medium"``, or ``"high"``.
+                Defaults to ``"low"``.
+
+        Returns:
+            ExtractJob object with ``id`` and ``processing_status``.
+
+        Example::
+
+            job = client.extract_async(
+                parse_job_id, InvoiceSchema, extraction_complexity="high"
+            )
+            # ... do other work ...
+            status = client.get_job_status(job.id)
+            if status.is_completed:
+                result = client.get_extract_job_result(job.id)
+        """
+        job = self._create_extract_job(parse_job_id, schema, extraction_complexity)
+        print(f"Extraction job {job.id} submitted.")
+        return job
+
+    def get_extract_job_details(self, job_id: str) -> ExtractJob:
+        """Get the full extract-job resource.
+
+        Args:
+            job_id: The extraction job ID.
+
+        Returns:
+            ExtractJob object with status and metadata.
+
+        Example::
+
+            job = client.get_extract_job_details("job_123")
+            print(job.processing_status)
+        """
+        return self._get_extract_job_details(job_id)
+
+    def get_extract_job_result(self, job_id: str) -> dict[str, Any]:
+        """Download the result of a completed extraction job.
+
+        Args:
+            job_id: The extraction job ID.
+
+        Returns:
+            Extracted fields as a dictionary.
+
+        Raises:
+            JobProcessingError: If the job has not completed yet.
+
+        Example::
+
+            result = client.get_extract_job_result("job_123")
+        """
+        return self._download_extract_result(job_id)
+
     # ==================== JOB SUBMISSION ====================
 
     def _submit_job(
