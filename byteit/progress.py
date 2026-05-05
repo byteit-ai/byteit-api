@@ -105,14 +105,16 @@ class ProgressTracker:
                     step = remaining / steps
                     for i in range(steps):  # noqa: B007
                         self._bar.set_description(
-                            "Delayed due to high load. Check later with get_parse_job_result(job_id)."
+                            "Delayed due to high load. "
+                            "Check later with get_parse_job_result(job_id)."
                         )
                         self._bar.update(step)
                         self._state.last_progress += step
                         time.sleep(2.0 / steps)
                     self._state.last_progress = 100.0
                     self._bar.set_description(
-                        "Delayed due to high load. Check later with get_parse_job_result(job_id)."
+                        "Delayed due to high load. "
+                        "Check later with get_parse_job_result(job_id)."
                     )
                     self._bar.n = 100
                     self._bar.refresh()
