@@ -433,8 +433,12 @@ class ByteITClient:
         schema_dict = self._build_schema_dict(schema)
         response = self._request(
             "POST",
-            self._build_job_resource_path(parse_job_id, EXTRACT_JOBS_PATH),
-            json={"schema": schema_dict, "extraction_complexity": extraction_complexity},
+            self._build_job_collection_path(EXTRACT_JOBS_PATH),
+            json={
+                "parse_job_id": parse_job_id,
+                "schema": schema_dict,
+                "extraction_complexity": extraction_complexity,
+            },
         )
         job_data = self._extract_job_data(response, primary_key="extract_job")
         return ExtractJob.from_dict(job_data)
