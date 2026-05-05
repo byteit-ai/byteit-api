@@ -258,8 +258,8 @@ class ByteITClient:
         self,
         parse_job_id: str,
         schema: type | dict[str, Any],
-        output: None | str | Path = None,
         extraction_complexity: str = "medium",
+        output: None | str | Path = None,
     ) -> dict[str, Any]:
         """Run extraction on a completed parse job and wait for the result.
 
@@ -273,10 +273,10 @@ class ByteITClient:
             schema: A subclass of
                 :class:`~byteit.models.ExtractionSchema.ExtractionSchema`
                 or a raw JSON schema dict defining the fields to extract.
-            output: Optional file path to save the JSON result to disk.
             extraction_complexity: Complexity tier for the extraction.
                 One of ``"low"``, ``"medium"``, or ``"high"``.
-                Defaults to ``"low"``.
+                Defaults to ``"medium"``.
+            output: Optional file path to save the JSON result to disk.
 
         Returns:
             Extracted fields as a dictionary matching the provided schema.
@@ -311,7 +311,7 @@ class ByteITClient:
         self,
         parse_job_id: str,
         schema: type | dict[str, Any],
-        extraction_complexity: str = "low",
+        extraction_complexity: str = "medium",
     ) -> ExtractJob:
         """Submit a structured field extraction job and return immediately.
 
@@ -327,7 +327,7 @@ class ByteITClient:
                 or a raw JSON schema dict defining the fields to extract.
             extraction_complexity: Complexity tier for the extraction.
                 One of ``"low"``, ``"medium"``, or ``"high"``.
-                Defaults to ``"low"``.
+                Defaults to ``"medium"``.
 
         Returns:
             ExtractJob object with ``id`` and ``processing_status``.
@@ -427,7 +427,7 @@ class ByteITClient:
         self,
         parse_job_id: str,
         schema: type | dict[str, Any],
-        extraction_complexity: str = "low",
+        extraction_complexity: str = "medium",
     ) -> ExtractJob:
         """Submit a new extraction job for an existing parse job."""
         schema_dict = self._build_schema_dict(schema)
