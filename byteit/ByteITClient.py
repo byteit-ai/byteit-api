@@ -259,7 +259,7 @@ class ByteITClient:
         parse_job_id: str,
         schema: type | dict[str, Any],
         output: None | str | Path = None,
-        extraction_complexity: str = "low",
+        extraction_complexity: str = "medium",
     ) -> dict[str, Any]:
         """Run extraction on a completed parse job and wait for the result.
 
