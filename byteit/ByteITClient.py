@@ -232,11 +232,20 @@ class ByteITClient:
         """
         return self._get_job_status(job_id)
 
-    def get_parse_job_result(self, job_id: str) -> bytes:
+    def get_parse_job_result(
+        self,
+        job_id: str,
+        result_format: str | OutputFormat | None = None,
+    ) -> bytes:
         """Download the result of a completed parse job.
 
         Args:
             job_id: The job ID.
+            result_format: Optional output format override. When omitted, the
+                backend returns the format that was requested when the job was
+                created. Supported values are ``OutputFormat.TXT``,
+                ``OutputFormat.JSON``, ``OutputFormat.MD``,
+                ``OutputFormat.HTML``, and ``OutputFormat.EXCEL``.
 
         Returns:
             Parsed content as bytes.
@@ -247,10 +256,16 @@ class ByteITClient:
         Example::
 
             result = client.get_parse_job_result("job_123")
+            result = client.get_parse_job_result(
+                "job_123", result_format=OutputFormat.TXT
+            )
             with open("output.md", "wb") as f:
                 f.write(result)
         """
-        return self._download_parse_result(job_id)
+        fmt: OutputFormat | None = None
+        if result_format is not None:
+            fmt = self._parse_output_format(result_format)
+        return self._download_parse_result(job_id, result_format=fmt)
 
     # ==================== EXTRACTION PUBLIC API ====================
 
@@ -548,9 +563,9 @@ class ByteITClient:
         if isinstance(result_format, str):
             normalized_result_format = result_format.strip().lower()
             for output_format in OutputFormat:
-                if normalized_result_format == output_format.name.lower() or (
-                    output_format is not OutputFormat.EXCEL
-                    and normalized_result_format == output_format.value.lower()
+                if normalized_result_format in (
+                    output_format.name.lower(),
+                    output_format.value.lower(),
                 ):
                     return output_format
 
@@ -677,10 +692,17 @@ class ByteITClient:
             time.sleep(poll_interval)
             iteration += 1
 
-    def _download_parse_result(self, job_id: str) -> bytes:
+    def _download_parse_result(
+        self,
+        job_id: str,
+        result_format: OutputFormat | None = None,
+    ) -> bytes:
         """Download parse job result."""
         url = self._build_url(self._build_job_result_path(job_id, PARSE_JOBS_PATH))
-        response = self._session.get(url, timeout=self.DEFAULT_TIMEOUT)
+        params = (
+            {"output_format": result_format.value} if result_format is not None else {}
+        )
+        response = self._session.get(url, params=params, timeout=self.DEFAULT_TIMEOUT)
         response.raise_for_status()
 
         content_disposition = response.headers.get("Content-Disposition", "")

@@ -11,6 +11,7 @@ class OutputFormat(str, Enum):  # noqa: UP042
     HTML = "html"
     MD = "md"
     EXCEL = "zip"
+    ZIP = "zip"
 
     def __str__(self) -> str:
         """Return the string value of the format."""
