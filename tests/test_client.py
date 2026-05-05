@@ -1281,7 +1281,9 @@ class TestDownloadExtractResult:
         response.ok = True
         response.json.return_value = {"invoice": "x"}
 
-        with patch.object(client._session, "request", return_value=response) as mock_request:
+        with patch.object(
+            client._session, "request", return_value=response
+        ) as mock_request:
             client._download_extract_result("ext_789")
 
         assert mock_request.call_args[0][0] == "GET"
