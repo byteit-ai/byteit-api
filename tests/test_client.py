@@ -944,7 +944,7 @@ class TestExtractionEndpointRouting:
 
     @patch.object(ByteITClient, "_request")
     def test_create_extract_job_posts_to_correct_endpoint(self, mock_request):
-        """_create_extract_job POSTs to /v1/jobs/parse-jobs/<id>/extract-jobs/."""
+        """_create_extract_job POSTs to the extract-job collection endpoint."""
         client = ByteITClient("test_key")
         mock_request.return_value = {
             "extract_job": {"id": "ext_123", "processing_status": "pending"}
@@ -954,8 +954,9 @@ class TestExtractionEndpointRouting:
 
         mock_request.assert_called_once_with(
             "POST",
-            "/v1/jobs/extract-jobs/parse_456/",
+            "/v1/jobs/extract-jobs/",
             json={
+                "parse_job_id": "parse_456",
                 "schema": client._build_schema_dict(_InvoiceSchema),
                 "extraction_complexity": "low",
             },
@@ -1009,7 +1010,7 @@ class TestExtract:
         result = client.extract("parse_123", _InvoiceSchema)
 
         assert result == {"invoice_number": "INV-001"}
-        mock_create.assert_called_once_with("parse_123", _InvoiceSchema, "low")
+        mock_create.assert_called_once_with("parse_123", _InvoiceSchema, "medium")
         mock_wait.assert_called_once_with(mock_job.id, mock_job)
         mock_download.assert_called_once_with(mock_job.id)
 
@@ -1064,7 +1065,7 @@ class TestExtractAsync:
         result = client.extract_async("parse_123", _InvoiceSchema)
 
         assert result is mock_job
-        mock_create.assert_called_once_with("parse_123", _InvoiceSchema, "low")
+        mock_create.assert_called_once_with("parse_123", _InvoiceSchema, "medium")
 
     @patch.object(ByteITClient, "_create_extract_job")
     def test_extract_async_does_not_wait_or_download(self, mock_create):
@@ -1224,9 +1225,10 @@ class TestDownloadExtractResult:
         client = ByteITClient("test_key")
         response = Mock(spec=requests.Response)
         response.status_code = 200
+        response.ok = True
         response.json.return_value = {"ready": True, "result": {"invoice": "INV-1"}}
 
-        with patch.object(client._session, "get", return_value=response):
+        with patch.object(client._session, "request", return_value=response):
             result = client._download_extract_result("ext_123")
 
         assert result == {"invoice": "INV-1"}
@@ -1236,9 +1238,10 @@ class TestDownloadExtractResult:
         client = ByteITClient("test_key")
         response = Mock(spec=requests.Response)
         response.status_code = 200
+        response.ok = True
         response.json.return_value = {"invoice": "INV-2"}
 
-        with patch.object(client._session, "get", return_value=response):
+        with patch.object(client._session, "request", return_value=response):
             result = client._download_extract_result("ext_123")
 
         assert result == {"invoice": "INV-2"}
@@ -1248,10 +1251,11 @@ class TestDownloadExtractResult:
         client = ByteITClient("test_key")
         response = Mock(spec=requests.Response)
         response.status_code = 200
+        response.ok = True
         response.json.return_value = {"ready": False, "processing_status": "processing"}
 
         with (
-            patch.object(client._session, "get", return_value=response),
+            patch.object(client._session, "request", return_value=response),
             pytest.raises(JobProcessingError, match="Result not available"),
         ):
             client._download_extract_result("ext_123")
@@ -1274,10 +1278,14 @@ class TestDownloadExtractResult:
         client = ByteITClient("test_key")
         response = Mock(spec=requests.Response)
         response.status_code = 200
+        response.ok = True
         response.json.return_value = {"invoice": "x"}
 
-        with patch.object(client._session, "get", return_value=response) as mock_get:
+        with patch.object(
+            client._session, "request", return_value=response
+        ) as mock_request:
             client._download_extract_result("ext_789")
 
-        called_url = mock_get.call_args[0][0]
+        assert mock_request.call_args[0][0] == "GET"
+        called_url = mock_request.call_args[0][1]
         assert "/v1/jobs/extract-jobs/ext_789/result/" in called_url
