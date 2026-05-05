@@ -187,7 +187,7 @@ class TestCreateJob:
     """Test _create_job method."""
 
     @patch.object(ByteITClient, "_request")
-    @patch.object(ByteITClient, "_get_job_details")
+    @patch.object(ByteITClient, "_get_parse_job_details")
     def test_create_job_with_local_file(self, mock_get_status, mock_request):
         """Create job with local file uploads correctly."""
         client = ByteITClient("test_key")
@@ -271,7 +271,7 @@ class TestCreateJob:
         file_obj.close.assert_called_once()
 
     @patch.object(ByteITClient, "_request")
-    @patch.object(ByteITClient, "_get_job_details")
+    @patch.object(ByteITClient, "_get_parse_job_details")
     def test_create_job_uses_parse_jobs_collection_path(
         self, mock_get_status, mock_request
     ):
@@ -299,8 +299,8 @@ class TestJobEndpointRouting:
     """Test job endpoint routing for parse jobs versus generic job status."""
 
     @patch.object(ByteITClient, "_request")
-    def test_get_job_details_uses_parse_job_detail_endpoint(self, mock_request):
-        """get_job_details reads parse job details from the parse-jobs endpoint."""
+    def test_get_parse_job_details_uses_parse_job_detail_endpoint(self, mock_request):
+        """_get_parse_job_details reads parse job details from the parse-jobs endpoint."""
         client = ByteITClient("test_key")
         mock_request.return_value = {
             "parse_job": {
@@ -310,7 +310,7 @@ class TestJobEndpointRouting:
             }
         }
 
-        job = client._get_job_details("job_123")
+        job = client._get_parse_job_details("job_123")
 
         assert job.id == "job_123"
         mock_request.assert_called_once_with("GET", "/v1/jobs/parse-jobs/job_123/")
@@ -353,7 +353,7 @@ class TestJobEndpointRouting:
             "detail": "",
         }
 
-        job_list = client._list_jobs()
+        job_list = client._list_parse_jobs()
 
         assert len(job_list.jobs) == 1
         assert job_list.name == "jobs/parse-jobs"
@@ -432,7 +432,7 @@ class TestWaitForCompletion:
 class TestParse:
     """Test parse method."""
 
-    @patch.object(ByteITClient, "_download_result")
+    @patch.object(ByteITClient, "_download_parse_result")
     @patch.object(ByteITClient, "_wait_for_completion")
     @patch.object(ByteITClient, "_submit_job")
     def test_parse_returns_bytes(
@@ -461,7 +461,7 @@ class TestParse:
         mock_download.assert_called_once_with("job_123")
 
     @patch.object(ByteITClient, "_try_display_result")
-    @patch.object(ByteITClient, "_download_result")
+    @patch.object(ByteITClient, "_download_parse_result")
     @patch.object(ByteITClient, "_wait_for_completion")
     @patch.object(ByteITClient, "_submit_job")
     def test_parse_calls_display_when_no_output(
@@ -487,7 +487,7 @@ class TestParse:
         mock_display.assert_called_once_with(b"parsed content", OutputFormat.JSON)
 
     @patch.object(ByteITClient, "_try_display_result")
-    @patch.object(ByteITClient, "_download_result")
+    @patch.object(ByteITClient, "_download_parse_result")
     @patch.object(ByteITClient, "_wait_for_completion")
     @patch.object(ByteITClient, "_submit_job")
     def test_parse_converts_string_result_format(
@@ -513,7 +513,7 @@ class TestParse:
         mock_submit.assert_called_once_with("test.pdf", None, OutputFormat.JSON, None)
         mock_display.assert_called_once_with(b"parsed content", OutputFormat.JSON)
 
-    @patch.object(ByteITClient, "_download_result")
+    @patch.object(ByteITClient, "_download_parse_result")
     @patch.object(ByteITClient, "_wait_for_completion")
     @patch.object(ByteITClient, "_submit_job")
     @patch("pathlib.Path.write_bytes")
@@ -629,7 +629,7 @@ class TestParseAsync:
 
         with (
             patch.object(client, "_wait_for_completion") as mock_wait,
-            patch.object(client, "_download_result") as mock_download,
+            patch.object(client, "_download_parse_result") as mock_download,
         ):
             client.parse_async("test.pdf")
             mock_wait.assert_not_called()
@@ -718,32 +718,32 @@ class TestContextManager:
         # Note: We can't directly check if session is closed without internal access  # noqa: E501
 
 
-class TestGetJobs:
-    """Test job retrieval methods."""
+class TestGetParseJobs:
+    """Test parse job retrieval methods."""
 
-    @patch.object(ByteITClient, "_list_jobs")
-    def test_get_jobs(self, mock_list):
-        """get_jobs returns full job list response."""
+    @patch.object(ByteITClient, "_list_parse_jobs")
+    def test_get_parse_jobs(self, mock_list):
+        """get_parse_jobs returns full job list response."""
         client = ByteITClient("test_key")
 
         mock_job_list = Mock()
         mock_job_list.jobs = [Mock(), Mock()]
         mock_list.return_value = mock_job_list
 
-        result = client.get_jobs()
+        result = client.get_parse_jobs()
 
         assert result == mock_job_list
         assert len(result.jobs) == 2
 
-    @patch.object(ByteITClient, "_get_job_details")
-    def test_get_job_details(self, mock_get_status):
-        """get_job_details returns specific job."""
+    @patch.object(ByteITClient, "_get_parse_job_details")
+    def test_get_parse_job_details(self, mock_get_status):
+        """get_parse_job_details returns specific job."""
         client = ByteITClient("test_key")
 
         mock_job = Mock()
         mock_get_status.return_value = mock_job
 
-        result = client.get_job_details("job_123")
+        result = client.get_parse_job_details("job_123")
 
         assert result == mock_job
         mock_get_status.assert_called_once_with("job_123")
@@ -761,14 +761,14 @@ class TestGetJobs:
         assert result == mock_status
         mock_get_status.assert_called_once_with("job_123")
 
-    @patch.object(ByteITClient, "_download_result")
-    def test_get_job_result(self, mock_download):
-        """get_job_result downloads job result."""
+    @patch.object(ByteITClient, "_download_parse_result")
+    def test_get_parse_job_result(self, mock_download):
+        """get_parse_job_result downloads job result."""
         client = ByteITClient("test_key")
 
         mock_download.return_value = b"result content"
 
-        result = client.get_job_result("job_123")
+        result = client.get_parse_job_result("job_123")
 
         assert result == b"result content"
         mock_download.assert_called_once_with("job_123")

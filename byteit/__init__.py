@@ -21,6 +21,7 @@ from .exceptions import (
 from .models.DocumentMetadata import DocumentMetadata
 from .models.ExtractionType import ExtractionType
 from .models.ExtractJob import ExtractJob
+from .models.ExtractJobList import ExtractJobList
 from .models.JobList import JobList
 from .models.JobStatus import JobStatus
 from .models.OutputFormat import OutputFormat
@@ -54,6 +55,7 @@ __all__ = [
     "ProcessingOptions",
     "ExtractionType",
     "ExtractJob",
+    "ExtractJobList",
     "OutputFormat",
     "ParseJob",
     "InputConnector",

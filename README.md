@@ -66,17 +66,17 @@ status = client.get_job_status(job.id)
 # status.processing_status: "pending" | "processing" | "completed" | "failed"
 
 # Fetch full job details when needed
-details = client.get_job_details(job.id)
+details = client.get_parse_job_details(job.id)
 
 # Download when ready
 if status.is_completed:
-    result = client.get_job_result(job.id)
+    result = client.get_parse_job_result(job.id)
 ```
 
 ### Job management
 
 ```python
-job_list = client.get_jobs()
+job_list = client.get_parse_jobs()
 
 for job in job_list.jobs:
     print(f"{job.id}  {job.processing_status}  {job.result_format}")
@@ -177,10 +177,13 @@ except ByteITError as e:
 |---|---|
 | `parse(input, ...)` | Parse a document, block until complete, return `bytes` |
 | `parse_async(input, ...)` | Submit a job, return `ParseJob` immediately |
-| `get_job_details(job_id)` | Get full `ParseJob` details |
+| `get_parse_job_details(job_id)` | Get full `ParseJob` details |
 | `get_job_status(job_id)` | Get current `JobStatus` |
-| `get_job_result(job_id)` | Download result as `bytes` |
-| `get_jobs()` | List all jobs as `JobList` |
+| `get_parse_job_result(job_id)` | Download result as `bytes` |
+| `get_parse_jobs()` | List all parse jobs as `JobList` |
+| `get_extract_jobs()` | List all extract jobs as `ExtractJobList` |
+| `get_extract_job_details(job_id)` | Get full `ExtractJob` details |
+| `get_extract_job_result(job_id)` | Download extraction result as `dict` |
 
 #### `parse(input, output=None, processing_options=None, result_format=OutputFormat.MD) → bytes`
 
