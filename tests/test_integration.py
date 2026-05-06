@@ -8,7 +8,7 @@ import os
 
 import pytest
 
-from byteit import ByteITClient, OutputFormat
+from byteit import ByteITClient
 
 # Skip integration tests by default
 pytestmark = pytest.mark.integration
@@ -42,7 +42,7 @@ class TestIntegrationParse:
 
     def test_parse_local_file(self, client, sample_file):
         """Parse a local file end-to-end."""
-        result = client.parse(str(sample_file), result_format=OutputFormat.TXT)
+        result = client.parse(str(sample_file))
 
         assert isinstance(result, bytes)
         assert len(result) > 0
@@ -53,7 +53,6 @@ class TestIntegrationParse:
 
         result = client.parse(
             str(sample_file),
-            result_format=OutputFormat.TXT,
             output=str(output_file),
         )
 
@@ -62,18 +61,10 @@ class TestIntegrationParse:
         assert output_file.read_bytes() == result
 
     def test_parse_different_formats(self, client, sample_file):
-        """Parse with different output formats."""
-        formats = [
-            OutputFormat.TXT,
-            OutputFormat.JSON,
-            OutputFormat.MD,
-            OutputFormat.HTML,
-        ]
-
-        for fmt in formats:
-            result = client.parse(str(sample_file), result_format=fmt)
-            assert isinstance(result, bytes)
-            assert len(result) > 0
+        """Parse always returns bytes with default JSON output from job submission."""
+        result = client.parse(str(sample_file))
+        assert isinstance(result, bytes)
+        assert len(result) > 0
 
 
 class TestIntegrationJobs:

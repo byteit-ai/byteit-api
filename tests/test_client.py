@@ -454,7 +454,7 @@ class TestParse:
         result = client.parse("test.pdf")
 
         assert result == b"parsed content"
-        mock_submit.assert_called_once_with("test.pdf", None, OutputFormat.MD, None)
+        mock_submit.assert_called_once_with("test.pdf", None, output=None)
         mock_wait.assert_called_once_with(
             "job_123", input_connector=mock_connector, job=mock_job
         )
@@ -481,7 +481,7 @@ class TestParse:
 
         mock_download.return_value = b"parsed content"
 
-        result = client.parse("test.pdf", result_format=OutputFormat.JSON)
+        result = client.parse("test.pdf")
 
         assert result == b"parsed content"
         mock_display.assert_called_once_with(b"parsed content", OutputFormat.JSON)
@@ -490,14 +490,14 @@ class TestParse:
     @patch.object(ByteITClient, "_download_parse_result")
     @patch.object(ByteITClient, "_wait_for_completion")
     @patch.object(ByteITClient, "_submit_job")
-    def test_parse_converts_string_result_format(
+    def test_parse_submits_json_by_default(
         self,
         mock_submit,
         mock_wait,  # noqa: ARG002
         mock_download,
-        mock_display,
+        mock_display,  # noqa: ARG002
     ):
-        """Parse converts string result formats before continuing."""
+        """Parse always submits jobs requesting JSON output."""
         client = ByteITClient("test_key")
 
         mock_connector = Mock()
@@ -507,11 +507,10 @@ class TestParse:
 
         mock_download.return_value = b"parsed content"
 
-        result = client.parse("test.pdf", result_format="json")
+        result = client.parse("test.pdf")
 
         assert result == b"parsed content"
-        mock_submit.assert_called_once_with("test.pdf", None, OutputFormat.JSON, None)
-        mock_display.assert_called_once_with(b"parsed content", OutputFormat.JSON)
+        mock_submit.assert_called_once_with("test.pdf", None, output=None)
 
     @patch.object(ByteITClient, "_download_parse_result")
     @patch.object(ByteITClient, "_wait_for_completion")
@@ -558,7 +557,7 @@ class TestParseAsync:
         result = client.parse_async("test.pdf")
 
         assert result is mock_job
-        mock_submit.assert_called_once_with("test.pdf", None, OutputFormat.MD)
+        mock_submit.assert_called_once_with("test.pdf", None)
 
     @patch.object(ByteITClient, "_submit_job")
     def test_parse_async_with_options(self, mock_submit):
@@ -570,53 +569,24 @@ class TestParseAsync:
         mock_submit.return_value = (mock_job, Mock())
 
         opts = {"languages": ["de"], "page_range": "1-3"}
-        result = client.parse_async(
-            "test.pdf",
-            processing_options=opts,
-            result_format=OutputFormat.JSON,
-        )
+        result = client.parse_async("test.pdf", processing_options=opts)
 
         assert result is mock_job
-        mock_submit.assert_called_once_with("test.pdf", opts, OutputFormat.JSON)
+        mock_submit.assert_called_once_with("test.pdf", opts)
 
     @patch.object(ByteITClient, "_submit_job")
-    def test_parse_async_converts_string_result_format(self, mock_submit):
-        """parse_async converts string result formats before submission."""
+    def test_parse_async_submits_json_by_default(self, mock_submit):
+        """parse_async always submits jobs requesting JSON output."""
         client = ByteITClient("test_key")
 
         mock_job = Mock(spec=ParseJob)
         mock_job.id = "job_456"
         mock_submit.return_value = (mock_job, Mock())
 
-        result = client.parse_async("test.pdf", result_format="json")
+        result = client.parse_async("test.pdf")
 
         assert result is mock_job
-        mock_submit.assert_called_once_with("test.pdf", None, OutputFormat.JSON)
-
-    @patch.object(ByteITClient, "_submit_job")
-    def test_parse_async_converts_excel_name(self, mock_submit):
-        """parse_async accepts the public excel string input."""
-        client = ByteITClient("test_key")
-
-        mock_job = Mock(spec=ParseJob)
-        mock_job.id = "job_excel"
-        mock_submit.return_value = (mock_job, Mock())
-
-        result = client.parse_async("test.pdf", result_format="excel")
-
-        assert result is mock_job
-        mock_submit.assert_called_once_with("test.pdf", None, OutputFormat.EXCEL)
-
-    def test_parse_async_rejects_zip_string_input(self):
-        """parse_async rejects zip as a public string input."""
-        client = ByteITClient("test_key")
-
-        with pytest.raises(
-            ValidationError,
-            match="result_format must be an OutputFormat or one of: "
-            + "txt, json, html, md, excel",
-        ):
-            client.parse_async("test.pdf", result_format="zip")
+        mock_submit.assert_called_once_with("test.pdf", None)
 
     @patch.object(ByteITClient, "_submit_job")
     def test_parse_async_does_not_wait(self, mock_submit):
@@ -655,7 +625,7 @@ class TestSubmitJob:
         mock_to_output.return_value = mock_output_conn
         mock_create.return_value = mock_job
 
-        job, input_conn = client._submit_job("test.pdf", None, OutputFormat.MD, None)
+        job, input_conn = client._submit_job("test.pdf", None, output=None)
 
         assert job is mock_job
         assert input_conn is mock_input_conn
@@ -665,7 +635,7 @@ class TestSubmitJob:
             input_connector=mock_input_conn,
             output_connector=mock_output_conn,
             processing_options=None,
-            result_format=OutputFormat.MD,
+            result_format=OutputFormat.JSON,
         )
 
     @patch.object(ByteITClient, "_create_job")
@@ -1220,44 +1190,33 @@ class TestWaitForExtractCompletion:
 class TestDownloadExtractResult:
     """Test _download_extract_result for happy path and error cases."""
 
-    def test_returns_result_dict_on_success(self):
+    @patch.object(ByteITClient, "_request")
+    def test_returns_result_dict_on_success(self, mock_request):
         """Returns the 'result' dict when the job is ready."""
         client = ByteITClient("test_key")
-        response = Mock(spec=requests.Response)
-        response.status_code = 200
-        response.ok = True
-        response.json.return_value = {"ready": True, "result": {"invoice": "INV-1"}}
+        mock_request.return_value = {"ready": True, "result": {"invoice": "INV-1"}}
 
-        with patch.object(client._session, "request", return_value=response):
-            result = client._download_extract_result("ext_123")
+        result = client._download_extract_result("ext_123")
 
         assert result == {"invoice": "INV-1"}
 
-    def test_returns_full_response_when_no_result_key(self):
+    @patch.object(ByteITClient, "_request")
+    def test_returns_full_response_when_no_result_key(self, mock_request):
         """Returns full response dict when 'result' key is absent."""
         client = ByteITClient("test_key")
-        response = Mock(spec=requests.Response)
-        response.status_code = 200
-        response.ok = True
-        response.json.return_value = {"invoice": "INV-2"}
+        mock_request.return_value = {"invoice": "INV-2"}
 
-        with patch.object(client._session, "request", return_value=response):
-            result = client._download_extract_result("ext_123")
+        result = client._download_extract_result("ext_123")
 
         assert result == {"invoice": "INV-2"}
 
-    def test_raises_when_not_ready(self):
+    @patch.object(ByteITClient, "_request")
+    def test_raises_when_not_ready(self, mock_request):
         """Raises JobProcessingError when the response signals not-ready."""
         client = ByteITClient("test_key")
-        response = Mock(spec=requests.Response)
-        response.status_code = 200
-        response.ok = True
-        response.json.return_value = {"ready": False, "processing_status": "processing"}
+        mock_request.return_value = {"ready": False, "processing_status": "processing"}
 
-        with (
-            patch.object(client._session, "request", return_value=response),
-            pytest.raises(JobProcessingError, match="Result not available"),
-        ):
+        with pytest.raises(JobProcessingError, match="Result not available"):
             client._download_extract_result("ext_123")
 
     def test_get_extract_job_result_delegates_to_download(self):
@@ -1273,19 +1232,14 @@ class TestDownloadExtractResult:
         assert result is expected
         mock_dl.assert_called_once_with("ext_123")
 
-    def test_download_uses_correct_url(self):
+    @patch.object(ByteITClient, "_request")
+    def test_download_uses_correct_path(self, mock_request):
         """Download hits /v1/jobs/extract-jobs/<id>/result/."""
         client = ByteITClient("test_key")
-        response = Mock(spec=requests.Response)
-        response.status_code = 200
-        response.ok = True
-        response.json.return_value = {"invoice": "x"}
+        mock_request.return_value = {"invoice": "x"}
 
-        with patch.object(
-            client._session, "request", return_value=response
-        ) as mock_request:
-            client._download_extract_result("ext_789")
+        client._download_extract_result("ext_789")
 
-        assert mock_request.call_args[0][0] == "GET"
-        called_url = mock_request.call_args[0][1]
-        assert "/v1/jobs/extract-jobs/ext_789/result/" in called_url
+        mock_request.assert_called_once_with(
+            "GET", "/v1/jobs/extract-jobs/ext_789/result/"
+        )
