@@ -104,6 +104,12 @@ def _check_build_integrity() -> None:
     _run([sys.executable, "-m", "twine", "check", *dist_files], "twine check")
 
 
+def _check_ruff() -> None:
+    """Fail if lint or formatting checks are not clean."""
+    _run([sys.executable, "-m", "ruff", "check", "."], "ruff check")
+    _run([sys.executable, "-m", "ruff", "format", "--check", "."], "ruff format --check")
+
+
 def _print_release_summary(version: str) -> None:
     print("Release preflight checks passed")
     print(f"- version: {version}")
@@ -126,6 +132,7 @@ def run_pre_commit() -> None:
 
     _check_unreleased_section_present()
     _check_changelog_entry(version)
+    _check_ruff()
     _check_build_integrity()
     _print_release_summary(version)
 

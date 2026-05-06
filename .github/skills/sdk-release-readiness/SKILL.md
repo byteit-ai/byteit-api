@@ -25,7 +25,11 @@ Ensure the SDK release is consistent and publishable without using sensitive dat
 - Build artifacts: `python -m build --sdist --wheel --outdir dist`
 - Metadata check: `python -m twine check dist/*`
 
-4. Release commit title:
+4. Ruff quality gate:
+- Lint must pass: `python -m ruff check .`
+- Format must be clean: `python -m ruff format --check .`
+
+5. Release commit title:
 - Must be exactly: `chore(release): X.Y.Z`
 - `X.Y.Z` must match `pyproject.toml` version.
 

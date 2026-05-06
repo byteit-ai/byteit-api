@@ -1,7 +1,6 @@
 """Data model for ByteIT parse jobs."""
 
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any, cast
 
 from byteit.models.DocumentMetadata import DocumentMetadata
@@ -17,11 +16,6 @@ class ParseJob:
 
     Attributes:
         id: Unique job identifier
-        name: Backend resource name
-        uid: Backend UUID for the resource
-        create_time: Job creation timestamp
-        update_time: Last update timestamp
-        delete_time: Job deletion timestamp
         processing_status: Current status (pending, processing, completed, failed)
         result_format: Output format (txt, json, md, html)
         nickname: Optional user-defined job name
@@ -42,11 +36,6 @@ class ParseJob:
     id: str
     processing_status: str
     result_format: str
-    name: str | None = None
-    uid: str | None = None
-    create_time: datetime | None = None
-    update_time: datetime | None = None
-    delete_time: datetime | None = None
     nickname: str | None = None
     metadata: DocumentMetadata | None = None
     processing_options: ProcessingOptions | None = None
@@ -74,10 +63,6 @@ class ParseJob:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ParseJob":
         """Create a ParseJob instance from API response data."""
-        create_time = cls._parse_datetime(data.get("create_time") or data.get("created_at"))
-        update_time = cls._parse_datetime(data.get("update_time") or data.get("updated_at"))
-        delete_time = cls._parse_datetime(data.get("delete_time"))
-
         metadata = None
         if data.get("metadata") and isinstance(data["metadata"], dict):
             metadata_dict = cast(dict[str, Any], data["metadata"])
@@ -102,11 +87,6 @@ class ParseJob:
             id=data["id"],
             processing_status=data["processing_status"],
             result_format=result_format or "",
-            name=data.get("name"),
-            uid=data.get("uid"),
-            create_time=create_time,
-            update_time=update_time,
-            delete_time=delete_time,
             nickname=data.get("nickname"),
             metadata=metadata,
             processing_options=processing_options,
@@ -116,12 +96,3 @@ class ParseJob:
             input_connector=data.get("input_connector"),
             output_connector=data.get("output_connector"),
         )
-
-    @staticmethod
-    def _parse_datetime(value: Any) -> datetime | None:
-        """Parse an ISO datetime string when present."""
-        if isinstance(value, datetime):
-            return value
-        if isinstance(value, str):
-            return datetime.fromisoformat(value.replace("Z", "+00:00"))
-        return None

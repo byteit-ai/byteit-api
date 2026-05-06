@@ -1,11 +1,11 @@
 """Tests for ByteITClient."""
 
-import sys
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 import requests
+from pydantic import Field
 
 from byteit import ByteITClient
 from byteit.connectors import LocalFileInputConnector
@@ -17,7 +17,9 @@ from byteit.exceptions import (
     ServerError,
     ValidationError,
 )
+from byteit.models.ExtractionSchema import ExtractionSchema
 from byteit.models.ExtractionType import ExtractionType
+from byteit.models.ExtractJob import ExtractJob
 from byteit.models.OutputFormat import OutputFormat
 from byteit.models.ParseJob import ParseJob
 from byteit.models.ProcessingOptions import ProcessingOptions
@@ -184,7 +186,7 @@ class TestCreateJob:
     """Test _create_job method."""
 
     @patch.object(ByteITClient, "_request")
-    @patch.object(ByteITClient, "_get_job_details")
+    @patch.object(ByteITClient, "_get_parse_job_details")
     def test_create_job_with_local_file(self, mock_get_status, mock_request):
         """Create job with local file uploads correctly."""
         client = ByteITClient("test_key")
@@ -268,7 +270,7 @@ class TestCreateJob:
         file_obj.close.assert_called_once()
 
     @patch.object(ByteITClient, "_request")
-    @patch.object(ByteITClient, "_get_job_details")
+    @patch.object(ByteITClient, "_get_parse_job_details")
     def test_create_job_uses_parse_jobs_collection_path(
         self, mock_get_status, mock_request
     ):
@@ -296,8 +298,8 @@ class TestJobEndpointRouting:
     """Test job endpoint routing for parse jobs versus generic job status."""
 
     @patch.object(ByteITClient, "_request")
-    def test_get_job_details_uses_parse_job_detail_endpoint(self, mock_request):
-        """get_job_details reads parse job details from the parse-jobs endpoint."""
+    def test_get_parse_job_details_uses_parse_job_detail_endpoint(self, mock_request):
+        """_get_parse_job_details reads parse job details from the parse-jobs endpoint."""
         client = ByteITClient("test_key")
         mock_request.return_value = {
             "parse_job": {
@@ -307,7 +309,7 @@ class TestJobEndpointRouting:
             }
         }
 
-        job = client._get_job_details("job_123")
+        job = client._get_parse_job_details("job_123")
 
         assert job.id == "job_123"
         mock_request.assert_called_once_with("GET", "/v1/jobs/parse-jobs/job_123/")
@@ -350,7 +352,7 @@ class TestJobEndpointRouting:
             "detail": "",
         }
 
-        job_list = client._list_jobs()
+        job_list = client._list_parse_jobs()
 
         assert len(job_list.jobs) == 1
         assert job_list.name == "jobs/parse-jobs"
@@ -429,7 +431,7 @@ class TestWaitForCompletion:
 class TestParse:
     """Test parse method."""
 
-    @patch.object(ByteITClient, "_download_result")
+    @patch.object(ByteITClient, "_download_parse_result")
     @patch.object(ByteITClient, "_wait_for_completion")
     @patch.object(ByteITClient, "_submit_job")
     def test_parse_returns_bytes(
@@ -451,24 +453,22 @@ class TestParse:
         result = client.parse("test.pdf")
 
         assert result == b"parsed content"
-        mock_submit.assert_called_once_with("test.pdf", None, OutputFormat.MD, None)
+        mock_submit.assert_called_once_with("test.pdf", None, output=None)
         mock_wait.assert_called_once_with(
             "job_123", input_connector=mock_connector, job=mock_job
         )
         mock_download.assert_called_once_with("job_123")
 
-    @patch.object(ByteITClient, "_try_display_result")
-    @patch.object(ByteITClient, "_download_result")
+    @patch.object(ByteITClient, "_download_parse_result")
     @patch.object(ByteITClient, "_wait_for_completion")
     @patch.object(ByteITClient, "_submit_job")
-    def test_parse_calls_display_when_no_output(
+    def test_parse_submits_json_by_default(
         self,
         mock_submit,
         mock_wait,  # noqa: ARG002
         mock_download,
-        mock_display,
     ):
-        """Parse calls display when output is None."""
+        """Parse always submits jobs requesting JSON output."""
         client = ByteITClient("test_key")
 
         mock_connector = Mock()
@@ -478,39 +478,12 @@ class TestParse:
 
         mock_download.return_value = b"parsed content"
 
-        result = client.parse("test.pdf", result_format=OutputFormat.JSON)
+        result = client.parse("test.pdf")
 
         assert result == b"parsed content"
-        mock_display.assert_called_once_with(b"parsed content", OutputFormat.JSON)
+        mock_submit.assert_called_once_with("test.pdf", None, output=None)
 
-    @patch.object(ByteITClient, "_try_display_result")
-    @patch.object(ByteITClient, "_download_result")
-    @patch.object(ByteITClient, "_wait_for_completion")
-    @patch.object(ByteITClient, "_submit_job")
-    def test_parse_converts_string_result_format(
-        self,
-        mock_submit,
-        mock_wait,  # noqa: ARG002
-        mock_download,
-        mock_display,
-    ):
-        """Parse converts string result formats before continuing."""
-        client = ByteITClient("test_key")
-
-        mock_connector = Mock()
-        mock_job = Mock()
-        mock_job.id = "job_123"
-        mock_submit.return_value = (mock_job, mock_connector)
-
-        mock_download.return_value = b"parsed content"
-
-        result = client.parse("test.pdf", result_format="json")
-
-        assert result == b"parsed content"
-        mock_submit.assert_called_once_with("test.pdf", None, OutputFormat.JSON, None)
-        mock_display.assert_called_once_with(b"parsed content", OutputFormat.JSON)
-
-    @patch.object(ByteITClient, "_download_result")
+    @patch.object(ByteITClient, "_download_parse_result")
     @patch.object(ByteITClient, "_wait_for_completion")
     @patch.object(ByteITClient, "_submit_job")
     @patch("pathlib.Path.write_bytes")
@@ -555,7 +528,7 @@ class TestParseAsync:
         result = client.parse_async("test.pdf")
 
         assert result is mock_job
-        mock_submit.assert_called_once_with("test.pdf", None, OutputFormat.MD)
+        mock_submit.assert_called_once_with("test.pdf", None)
 
     @patch.object(ByteITClient, "_submit_job")
     def test_parse_async_with_options(self, mock_submit):
@@ -567,53 +540,24 @@ class TestParseAsync:
         mock_submit.return_value = (mock_job, Mock())
 
         opts = {"languages": ["de"], "page_range": "1-3"}
-        result = client.parse_async(
-            "test.pdf",
-            processing_options=opts,
-            result_format=OutputFormat.JSON,
-        )
+        result = client.parse_async("test.pdf", processing_options=opts)
 
         assert result is mock_job
-        mock_submit.assert_called_once_with("test.pdf", opts, OutputFormat.JSON)
+        mock_submit.assert_called_once_with("test.pdf", opts)
 
     @patch.object(ByteITClient, "_submit_job")
-    def test_parse_async_converts_string_result_format(self, mock_submit):
-        """parse_async converts string result formats before submission."""
+    def test_parse_async_submits_json_by_default(self, mock_submit):
+        """parse_async always submits jobs requesting JSON output."""
         client = ByteITClient("test_key")
 
         mock_job = Mock(spec=ParseJob)
         mock_job.id = "job_456"
         mock_submit.return_value = (mock_job, Mock())
 
-        result = client.parse_async("test.pdf", result_format="json")
+        result = client.parse_async("test.pdf")
 
         assert result is mock_job
-        mock_submit.assert_called_once_with("test.pdf", None, OutputFormat.JSON)
-
-    @patch.object(ByteITClient, "_submit_job")
-    def test_parse_async_converts_excel_name(self, mock_submit):
-        """parse_async accepts the public excel string input."""
-        client = ByteITClient("test_key")
-
-        mock_job = Mock(spec=ParseJob)
-        mock_job.id = "job_excel"
-        mock_submit.return_value = (mock_job, Mock())
-
-        result = client.parse_async("test.pdf", result_format="excel")
-
-        assert result is mock_job
-        mock_submit.assert_called_once_with("test.pdf", None, OutputFormat.EXCEL)
-
-    def test_parse_async_rejects_zip_string_input(self):
-        """parse_async rejects zip as a public string input."""
-        client = ByteITClient("test_key")
-
-        with pytest.raises(
-            ValidationError,
-            match="result_format must be an OutputFormat or one of: "
-            + "txt, json, html, md, excel",
-        ):
-            client.parse_async("test.pdf", result_format="zip")
+        mock_submit.assert_called_once_with("test.pdf", None)
 
     @patch.object(ByteITClient, "_submit_job")
     def test_parse_async_does_not_wait(self, mock_submit):
@@ -626,7 +570,7 @@ class TestParseAsync:
 
         with (
             patch.object(client, "_wait_for_completion") as mock_wait,
-            patch.object(client, "_download_result") as mock_download,
+            patch.object(client, "_download_parse_result") as mock_download,
         ):
             client.parse_async("test.pdf")
             mock_wait.assert_not_called()
@@ -652,7 +596,7 @@ class TestSubmitJob:
         mock_to_output.return_value = mock_output_conn
         mock_create.return_value = mock_job
 
-        job, input_conn = client._submit_job("test.pdf", None, OutputFormat.MD, None)
+        job, input_conn = client._submit_job("test.pdf", None, output=None)
 
         assert job is mock_job
         assert input_conn is mock_input_conn
@@ -662,7 +606,7 @@ class TestSubmitJob:
             input_connector=mock_input_conn,
             output_connector=mock_output_conn,
             processing_options=None,
-            result_format=OutputFormat.MD,
+            result_format=OutputFormat.JSON,
         )
 
     @patch.object(ByteITClient, "_create_job")
@@ -715,32 +659,32 @@ class TestContextManager:
         # Note: We can't directly check if session is closed without internal access  # noqa: E501
 
 
-class TestGetJobs:
-    """Test job retrieval methods."""
+class TestGetParseJobs:
+    """Test parse job retrieval methods."""
 
-    @patch.object(ByteITClient, "_list_jobs")
-    def test_get_jobs(self, mock_list):
-        """get_jobs returns full job list response."""
+    @patch.object(ByteITClient, "_list_parse_jobs")
+    def test_get_parse_jobs(self, mock_list):
+        """get_parse_jobs returns full job list response."""
         client = ByteITClient("test_key")
 
         mock_job_list = Mock()
         mock_job_list.jobs = [Mock(), Mock()]
         mock_list.return_value = mock_job_list
 
-        result = client.get_jobs()
+        result = client.get_parse_jobs()
 
         assert result == mock_job_list
         assert len(result.jobs) == 2
 
-    @patch.object(ByteITClient, "_get_job_details")
-    def test_get_job_details(self, mock_get_status):
-        """get_job_details returns specific job."""
+    @patch.object(ByteITClient, "_get_parse_job_details")
+    def test_get_parse_job_details(self, mock_get_status):
+        """get_parse_job_details returns specific job."""
         client = ByteITClient("test_key")
 
         mock_job = Mock()
         mock_get_status.return_value = mock_job
 
-        result = client.get_job_details("job_123")
+        result = client.get_parse_job_details("job_123")
 
         assert result == mock_job
         mock_get_status.assert_called_once_with("job_123")
@@ -758,104 +702,425 @@ class TestGetJobs:
         assert result == mock_status
         mock_get_status.assert_called_once_with("job_123")
 
-    @patch.object(ByteITClient, "_download_result")
-    def test_get_job_result(self, mock_download):
-        """get_job_result downloads job result."""
+    @patch.object(ByteITClient, "_download_parse_result")
+    def test_get_parse_job_result(self, mock_download):
+        """get_parse_job_result downloads job result."""
         client = ByteITClient("test_key")
 
         mock_download.return_value = b"result content"
 
-        result = client.get_job_result("job_123")
+        result = client.get_parse_job_result("job_123")
 
         assert result == b"result content"
         mock_download.assert_called_once_with("job_123")
 
 
-def _make_ipython_mock():
-    """Build a minimal sys.modules mock for IPython.display."""
-    mock_display_mod = MagicMock()
-    mock_ipython = MagicMock()
-    mock_ipython.display = mock_display_mod
-    return mock_ipython, mock_display_mod
+# ---------------------------------------------------------------------------
+# Helpers shared by extraction tests
+# ---------------------------------------------------------------------------
 
 
-class TestDisplayResult:
-    """Test _try_display_result method."""
+def _make_extract_job(
+    job_id: str = "ext_123",
+    status: str = "pending",
+) -> ExtractJob:
+    """Build a minimal ExtractJob for use in tests."""
+    return ExtractJob(id=job_id, processing_status=status)
 
-    def test_display_json_in_notebook(self):
-        """Display JSON when IPython is available."""
+
+class _InvoiceSchema(ExtractionSchema):
+    """Minimal ExtractionSchema subclass for testing."""
+
+    invoice_number: str | None = Field(description="Invoice number.")
+    total_amount: str | None = Field(description="Total amount due.")
+
+
+# ---------------------------------------------------------------------------
+# Schema building
+# ---------------------------------------------------------------------------
+
+
+class TestBuildSchemaDict:
+    """Test _build_schema_dict — converts schema inputs to API payload dicts."""
+
+    def test_raw_dict_passthrough(self):
+        """Raw dict schema passes through unchanged."""
         client = ByteITClient("test_key")
-        mock_ipython, mock_display_mod = _make_ipython_mock()
+        schema = {"type": "object", "properties": {"field": {"type": "string"}}}
 
-        with patch.dict(
-            sys.modules,
-            {"IPython": mock_ipython, "IPython.display": mock_display_mod},
+        result = client._build_schema_dict(schema)
+
+        assert result is schema
+
+    def test_extraction_schema_subclass_calls_build_api_schema(self):
+        """ExtractionSchema subclass uses build_api_schema."""
+        client = ByteITClient("test_key")
+
+        result = client._build_schema_dict(_InvoiceSchema)
+
+        assert result["type"] == "object"
+        assert "invoice_number" in result["properties"]
+        assert "total_amount" in result["properties"]
+        # 'title' keys are pruned by ExtractionSchema.build_api_schema
+        assert "title" not in result
+
+    def test_plain_pydantic_model_falls_back_to_model_json_schema(self):
+        """Plain Pydantic model (no build_api_schema) uses model_json_schema."""
+        client = ByteITClient("test_key")
+
+        # A class with model_json_schema but without build_api_schema
+        mock_schema = Mock(spec=["model_json_schema"])
+        mock_schema.model_json_schema.return_value = {"type": "object"}
+
+        result = client._build_schema_dict(mock_schema)
+
+        assert result == {"type": "object"}
+        mock_schema.model_json_schema.assert_called_once()
+
+    def test_unsupported_type_raises_validation_error(self):
+        """Object without schema methods raises ValidationError."""
+        client = ByteITClient("test_key")
+
+        with pytest.raises(ValidationError, match="schema must be a dict"):
+            client._build_schema_dict(object())
+
+
+# ---------------------------------------------------------------------------
+# Extraction endpoint routing
+# ---------------------------------------------------------------------------
+
+
+class TestExtractionEndpointRouting:
+    """Test that extraction methods use the correct API paths."""
+
+    @patch.object(ByteITClient, "_request")
+    def test_create_extract_job_posts_to_correct_endpoint(self, mock_request):
+        """_create_extract_job POSTs to the extract-job collection endpoint."""
+        client = ByteITClient("test_key")
+        mock_request.return_value = {
+            "extract_job": {"id": "ext_123", "processing_status": "pending"}
+        }
+
+        client._create_extract_job("parse_456", _InvoiceSchema, "low")
+
+        mock_request.assert_called_once_with(
+            "POST",
+            "/v1/jobs/extract-jobs/",
+            json={
+                "parse_job_id": "parse_456",
+                "schema": client._build_schema_dict(_InvoiceSchema),
+                "extraction_complexity": "low",
+            },
+        )
+
+    @patch.object(ByteITClient, "_request")
+    def test_get_extract_job_details_reads_correct_endpoint(self, mock_request):
+        """_get_extract_job_details GETs /v1/jobs/extract-jobs/<id>/."""
+        client = ByteITClient("test_key")
+        mock_request.return_value = {
+            "extract_job": {"id": "ext_123", "processing_status": "completed"}
+        }
+
+        job = client._get_extract_job_details("ext_123")
+
+        assert job.id == "ext_123"
+        mock_request.assert_called_once_with("GET", "/v1/jobs/extract-jobs/ext_123/")
+
+    def test_get_extract_job_details_public_api_delegates(self):
+        """get_extract_job_details delegates to _get_extract_job_details."""
+        client = ByteITClient("test_key")
+        mock_job = _make_extract_job()
+
+        with patch.object(
+            client, "_get_extract_job_details", return_value=mock_job
+        ) as mock_internal:
+            result = client.get_extract_job_details("ext_123")
+
+        assert result is mock_job
+        mock_internal.assert_called_once_with("ext_123")
+
+
+# ---------------------------------------------------------------------------
+# extract() — blocking workflow
+# ---------------------------------------------------------------------------
+
+
+class TestExtract:
+    """Test the blocking extract() public method."""
+
+    @patch.object(ByteITClient, "_download_extract_result")
+    @patch.object(ByteITClient, "_wait_for_extract_completion")
+    @patch.object(ByteITClient, "_create_extract_job")
+    def test_extract_returns_dict(self, mock_create, mock_wait, mock_download):
+        """extract() creates job, waits, downloads, and returns dict."""
+        client = ByteITClient("test_key")
+        mock_job = _make_extract_job()
+        mock_create.return_value = mock_job
+        mock_download.return_value = {"invoice_number": "INV-001"}
+
+        result = client.extract("parse_123", _InvoiceSchema)
+
+        assert result == {"invoice_number": "INV-001"}
+        mock_create.assert_called_once_with("parse_123", _InvoiceSchema, "medium")
+        mock_wait.assert_called_once_with(mock_job.id, mock_job)
+        mock_download.assert_called_once_with(mock_job.id)
+
+    @patch.object(ByteITClient, "_download_extract_result")
+    @patch.object(ByteITClient, "_wait_for_extract_completion")
+    @patch.object(ByteITClient, "_create_extract_job")
+    @patch("pathlib.Path.write_text")
+    def test_extract_saves_to_file(
+        self, mock_write, mock_create, _mock_wait, mock_download
+    ):
+        """extract() with an output path writes the JSON result to disk."""
+        client = ByteITClient("test_key")
+        mock_create.return_value = _make_extract_job()
+        mock_download.return_value = {"total": "100"}
+
+        client.extract("parse_123", _InvoiceSchema, output="out.json")
+
+        mock_write.assert_called_once()
+        written_content = mock_write.call_args[0][0]
+        assert '"total"' in written_content
+        assert '"100"' in written_content
+
+    @patch.object(ByteITClient, "_download_extract_result")
+    @patch.object(ByteITClient, "_wait_for_extract_completion")
+    @patch.object(ByteITClient, "_create_extract_job")
+    def test_extract_forwards_complexity(self, mock_create, _mock_wait, mock_download):
+        """extract() passes extraction_complexity to _create_extract_job."""
+        client = ByteITClient("test_key")
+        mock_create.return_value = _make_extract_job()
+        mock_download.return_value = {}
+
+        client.extract("parse_123", _InvoiceSchema, extraction_complexity="high")
+
+        mock_create.assert_called_once_with("parse_123", _InvoiceSchema, "high")
+
+
+# ---------------------------------------------------------------------------
+# extract_async() — non-blocking workflow
+# ---------------------------------------------------------------------------
+
+
+class TestExtractAsync:
+    """Test the non-blocking extract_async() public method."""
+
+    @patch.object(ByteITClient, "_create_extract_job")
+    def test_extract_async_returns_extract_job(self, mock_create):
+        """extract_async() returns ExtractJob without waiting."""
+        client = ByteITClient("test_key")
+        mock_job = _make_extract_job()
+        mock_create.return_value = mock_job
+
+        result = client.extract_async("parse_123", _InvoiceSchema)
+
+        assert result is mock_job
+        mock_create.assert_called_once_with("parse_123", _InvoiceSchema, "medium")
+
+    @patch.object(ByteITClient, "_create_extract_job")
+    def test_extract_async_does_not_wait_or_download(self, mock_create):
+        """extract_async() never calls wait or download methods."""
+        client = ByteITClient("test_key")
+        mock_create.return_value = _make_extract_job()
+
+        with (
+            patch.object(client, "_wait_for_extract_completion") as mock_wait,
+            patch.object(client, "_download_extract_result") as mock_download,
         ):
-            client._try_display_result(b'{"key": "value"}', OutputFormat.JSON)
+            client.extract_async("parse_123", _InvoiceSchema)
+            mock_wait.assert_not_called()
+            mock_download.assert_not_called()
 
-        mock_display_mod.display.assert_called_once()
-        mock_display_mod.JSON.assert_called_once()
-
-    def test_display_markdown_in_notebook(self):
-        """Display Markdown when IPython is available."""
+    @patch.object(ByteITClient, "_create_extract_job")
+    def test_extract_async_forwards_complexity(self, mock_create):
+        """extract_async() passes extraction_complexity through."""
         client = ByteITClient("test_key")
-        mock_ipython, mock_display_mod = _make_ipython_mock()
+        mock_create.return_value = _make_extract_job()
 
-        with patch.dict(
-            sys.modules,
-            {"IPython": mock_ipython, "IPython.display": mock_display_mod},
-        ):
-            client._try_display_result(b"# Header", OutputFormat.MD)
+        client.extract_async("parse_123", _InvoiceSchema, extraction_complexity="medium")
 
-        mock_display_mod.display.assert_called_once()
-        mock_display_mod.Markdown.assert_called_once()
+        mock_create.assert_called_once_with("parse_123", _InvoiceSchema, "medium")
 
-    def test_display_html_in_notebook(self):
-        """Display HTML when IPython is available."""
+
+# ---------------------------------------------------------------------------
+# _wait_for_extract_completion — polling behaviour
+# ---------------------------------------------------------------------------
+
+
+class TestWaitForExtractCompletion:
+    """Test polling logic inside _wait_for_extract_completion."""
+
+    @patch.object(ByteITClient, "_get_job_status")
+    @patch("time.sleep")
+    def test_returns_on_first_completed_poll(self, mock_sleep, mock_status):
+        """Returns immediately when the first poll is already completed."""
         client = ByteITClient("test_key")
-        mock_ipython, mock_display_mod = _make_ipython_mock()
+        mock_status.return_value = Mock(
+            processing_status="completed",
+            is_completed=True,
+            is_failed=False,
+            message=None,
+        )
+        job = _make_extract_job()
 
-        with patch.dict(
-            sys.modules,
-            {"IPython": mock_ipython, "IPython.display": mock_display_mod},
-        ):
-            client._try_display_result(b"<h1>Header</h1>", OutputFormat.HTML)
+        result = client._wait_for_extract_completion(job.id, job)
 
-        mock_display_mod.display.assert_called_once()
-        mock_display_mod.HTML.assert_called_once()
+        assert result.processing_status == "completed"
+        mock_sleep.assert_not_called()
 
-    def test_display_text_in_notebook(self):
-        """Display text with code block when IPython is available."""
+    @patch.object(ByteITClient, "_get_job_status")
+    @patch("time.sleep")
+    def test_polls_until_completed(self, mock_sleep, mock_status):
+        """Continues polling until the job completes."""
         client = ByteITClient("test_key")
-        mock_ipython, mock_display_mod = _make_ipython_mock()
+        pending = Mock(
+            processing_status="processing",
+            is_completed=False,
+            is_failed=False,
+            message=None,
+        )
+        completed = Mock(
+            processing_status="completed",
+            is_completed=True,
+            is_failed=False,
+            message=None,
+        )
+        mock_status.side_effect = [pending, pending, completed]
+        job = _make_extract_job()
 
-        with patch.dict(
-            sys.modules,
-            {"IPython": mock_ipython, "IPython.display": mock_display_mod},
-        ):
-            client._try_display_result(b"Plain text", OutputFormat.TXT)
+        result = client._wait_for_extract_completion(job.id, job)
 
-        mock_display_mod.display.assert_called_once()
-        mock_display_mod.Markdown.assert_called_once()
+        assert result.processing_status == "completed"
+        assert mock_status.call_count == 3
+        assert mock_sleep.call_count == 2
 
-    def test_skip_display_for_excel_result(self):
-        """Skip notebook display for Excel archive results."""
+    @patch.object(ByteITClient, "_get_job_status")
+    def test_raises_on_failed_job(self, mock_status):
+        """Raises JobProcessingError when the extraction job fails."""
         client = ByteITClient("test_key")
-        mock_ipython, mock_display_mod = _make_ipython_mock()
+        mock_status.return_value = Mock(
+            processing_status="failed",
+            is_completed=False,
+            is_failed=True,
+            message="OCR error",
+        )
+        job = _make_extract_job()
 
-        with patch.dict(
-            sys.modules,
-            {"IPython": mock_ipython, "IPython.display": mock_display_mod},
-        ):
-            client._try_display_result(
-                b"PK\x03\x04binary zip content", OutputFormat.EXCEL
-            )
+        with pytest.raises(JobProcessingError, match="Extraction job failed"):
+            client._wait_for_extract_completion(job.id, job)
 
-        mock_display_mod.display.assert_not_called()
-
-    def test_display_handles_import_error(self):
-        """Gracefully skip display when IPython is not available."""
+    @patch.object(ByteITClient, "_get_job_status")
+    @patch("time.sleep")
+    def test_adaptive_polling_intervals(self, mock_sleep, mock_status):
+        """Polling intervals follow MIN(1*1.5^(x-1), 10) formula."""
         client = ByteITClient("test_key")
-        # Remove IPython from sys.modules to simulate it not being installed
-        with patch.dict(sys.modules, {"IPython": None, "IPython.display": None}):
-            client._try_display_result(b"test", OutputFormat.TXT)  # must not raise
+        pending = Mock(
+            processing_status="processing",
+            is_completed=False,
+            is_failed=False,
+            message=None,
+        )
+        completed = Mock(
+            processing_status="completed",
+            is_completed=True,
+            is_failed=False,
+            message=None,
+        )
+        mock_status.side_effect = [pending, pending, pending, completed]
+        job = _make_extract_job()
+
+        client._wait_for_extract_completion(job.id, job)
+
+        intervals = [call[0][0] for call in mock_sleep.call_args_list]
+        assert intervals == [1.0, 1.5, 2.25]
+
+    @patch.object(ByteITClient, "_get_job_status")
+    @patch("time.sleep")
+    def test_polling_interval_capped_at_ten_seconds(self, mock_sleep, mock_status):
+        """Polling interval is capped at 10 seconds."""
+        client = ByteITClient("test_key")
+        pending = Mock(
+            processing_status="processing",
+            is_completed=False,
+            is_failed=False,
+            message=None,
+        )
+        completed = Mock(
+            processing_status="completed",
+            is_completed=True,
+            is_failed=False,
+            message=None,
+        )
+        # 8 pending polls — enough for the exponential formula to exceed 10 s
+        mock_status.side_effect = [pending] * 8 + [completed]
+        job = _make_extract_job()
+
+        client._wait_for_extract_completion(job.id, job)
+
+        intervals = [call[0][0] for call in mock_sleep.call_args_list]
+        assert all(interval <= 10 for interval in intervals)
+        assert intervals[-1] == 10
+
+
+# ---------------------------------------------------------------------------
+# _download_extract_result — result download and error handling
+# ---------------------------------------------------------------------------
+
+
+class TestDownloadExtractResult:
+    """Test _download_extract_result for happy path and error cases."""
+
+    @patch.object(ByteITClient, "_request")
+    def test_returns_result_dict_on_success(self, mock_request):
+        """Returns the 'result' dict when the job is ready."""
+        client = ByteITClient("test_key")
+        mock_request.return_value = {"ready": True, "result": {"invoice": "INV-1"}}
+
+        result = client._download_extract_result("ext_123")
+
+        assert result == {"invoice": "INV-1"}
+
+    @patch.object(ByteITClient, "_request")
+    def test_returns_full_response_when_no_result_key(self, mock_request):
+        """Returns full response dict when 'result' key is absent."""
+        client = ByteITClient("test_key")
+        mock_request.return_value = {"invoice": "INV-2"}
+
+        result = client._download_extract_result("ext_123")
+
+        assert result == {"invoice": "INV-2"}
+
+    @patch.object(ByteITClient, "_request")
+    def test_raises_when_not_ready(self, mock_request):
+        """Raises JobProcessingError when the response signals not-ready."""
+        client = ByteITClient("test_key")
+        mock_request.return_value = {"ready": False, "processing_status": "processing"}
+
+        with pytest.raises(JobProcessingError, match="Result not available"):
+            client._download_extract_result("ext_123")
+
+    def test_get_extract_job_result_delegates_to_download(self):
+        """get_extract_job_result() delegates to _download_extract_result."""
+        client = ByteITClient("test_key")
+        expected = {"field": "value"}
+
+        with patch.object(
+            client, "_download_extract_result", return_value=expected
+        ) as mock_dl:
+            result = client.get_extract_job_result("ext_123")
+
+        assert result is expected
+        mock_dl.assert_called_once_with("ext_123")
+
+    @patch.object(ByteITClient, "_request")
+    def test_download_uses_correct_path(self, mock_request):
+        """Download hits /v1/jobs/extract-jobs/<id>/result/."""
+        client = ByteITClient("test_key")
+        mock_request.return_value = {"invoice": "x"}
+
+        client._download_extract_result("ext_789")
+
+        mock_request.assert_called_once_with(
+            "GET", "/v1/jobs/extract-jobs/ext_789/result/"
+        )

@@ -9,7 +9,7 @@ class LocalFileOutputConnector(OutputConnector):
     """Output connector that stores results in ByteIT cloud storage.
 
     Results are stored on ByteIT servers and can be retrieved later
-    using the job ID and get_job_result() method.
+    using the job ID and get_parse_job_result() method.
 
     This is the default output connector if none is specified.
     """

@@ -2,7 +2,6 @@
 
 import json
 import time
-from datetime import datetime
 from pathlib import Path
 from types import TracebackType
 from typing import Any
@@ -25,6 +24,8 @@ from .exceptions import (
     ServerError,
     ValidationError,
 )
+from .models.ExtractJob import ExtractJob
+from .models.ExtractJobList import ExtractJobList
 from .models.JobList import JobList
 from .models.JobStatus import JobStatus
 from .models.OutputFormat import OutputFormat
@@ -37,6 +38,7 @@ API_VERSION = "v1"
 API_BASE = f"/{API_VERSION}"
 JOBS_PATH = "jobs"
 PARSE_JOBS_PATH = "parse-jobs"
+EXTRACT_JOBS_PATH = "extract-jobs"
 
 
 class ByteITClient:
@@ -45,12 +47,15 @@ class ByteITClient:
     Provides both synchronous and asynchronous document parsing workflows.
 
     Methods:
-        parse(input, ...):           Parse a document and wait for the result.
-        parse_async(input, ...):     Submit a document for parsing, return.
-        get_job_details(job_id):     Get the full parse-job resource.
-        get_job_status(job_id):      Check the lightweight processing status.
-        get_job_result(job_id):      Download the result of a completed job.
-        get_jobs():                  List all jobs for your account.
+        parse(input, ...):                Parse a document and wait for the result.
+        parse_async(input, ...):          Submit a document for parsing, return.
+        get_parse_job_details(job_id):    Get the full parse-job resource.
+        get_job_status(job_id):           Check the lightweight processing status.
+        get_parse_job_result(job_id):     Download the result of a completed job.
+        get_parse_jobs():                 List all parse jobs for your account.
+        get_extract_jobs():               List all extract jobs for your account.
+        get_extract_job_details(job_id):  Get the full extract-job resource.
+        get_extract_job_result(job_id):   Download the result of a completed extraction.
 
     Examples:
         Synchronous (blocking)::
@@ -63,8 +68,8 @@ class ByteITClient:
             job = client.parse_async("document.pdf") # ... do other work ...
             status = client.get_job_status(job.id)
             if status.is_completed:
-                details = client.get_job_details(job.id)
-                result = client.get_job_result(details.id)
+                details = client.get_parse_job_details(job.id)
+                result = client.get_parse_job_result(details.id)
     """
 
     # BASE_URL = "https://api.byteit.ai"
@@ -93,9 +98,8 @@ class ByteITClient:
     def parse(
         self,
         input: str | Path | InputConnector,
-        output: None | str | Path = None,
         processing_options: ProcessingOptions | dict | None = None,
-        result_format: str | OutputFormat = OutputFormat.MD,
+        output: None | str | Path = None,
     ) -> bytes:
         """Parse a document and wait for the result.
 
@@ -108,10 +112,6 @@ class ByteITClient:
             processing_options: ProcessingOptions or dict with keys:
                 ``languages`` (list[str]), ``page_range`` (str), and
                 ``extraction_type`` (str or ExtractionType).
-            result_format: Output format enum. Supported values are
-                ``OutputFormat.TXT``, ``OutputFormat.JSON``,
-                ``OutputFormat.MD``, ``OutputFormat.HTML``, and
-                ``OutputFormat.EXCEL``.
 
         Returns:
             Parsed content as bytes.
@@ -122,23 +122,17 @@ class ByteITClient:
 
             result = client.parse("document.pdf")
             client.parse("doc.pdf", output="result.md")
-            client.parse("doc.pdf", result_format=OutputFormat.JSON)
         """
-        result_format = self._parse_output_format(result_format)
-        job, input_connector = self._submit_job(
-            input, processing_options, result_format, output
-        )
+        job, input_connector = self._submit_job(input, processing_options, output=output)
         print(f"Job {job.id} created. Waiting for completion...")
         self._wait_for_completion(job.id, input_connector=input_connector, job=job)
 
         # Download result
-        result_bytes = self._download_result(job.id)
+        result_bytes = self._download_parse_result(job.id)
 
         # If output is a file path, save it
         if isinstance(output, (str, Path)):
             Path(output).write_bytes(result_bytes)
-        elif output is None:
-            self._try_display_result(result_bytes, result_format)
 
         return result_bytes
 
@@ -146,23 +140,18 @@ class ByteITClient:
         self,
         input: str | Path | InputConnector,
         processing_options: ProcessingOptions | dict | None = None,
-        result_format: str | OutputFormat = OutputFormat.MD,
     ) -> ParseJob:
         """Submit a document for parsing and return immediately.
 
         Use this for non-blocking workflows. Check progress with
-        :meth:`get_job_status`, inspect metadata with :meth:`get_job_details`,
-        and retrieve results with :meth:`get_job_result`.
+        :meth:`get_job_status`, inspect metadata with :meth:`get_parse_job_details`,
+        and retrieve results with :meth:`get_parse_job_result`.
 
         Args:
             input: File path (str/Path) or InputConnector.
             processing_options: ProcessingOptions or dict with keys:
                 ``languages`` (list[str]), ``page_range`` (str), and
                 ``extraction_type`` (str or ExtractionType).
-            result_format: Output format enum. Supported values are
-                ``OutputFormat.TXT``, ``OutputFormat.JSON``,
-                ``OutputFormat.MD``, ``OutputFormat.HTML``, and
-                ``OutputFormat.EXCEL``.
 
         Returns:
             ParseJob object with ``id``, ``processing_status``, and other metadata.
@@ -173,28 +162,27 @@ class ByteITClient:
             # ... do other work ...
             status = client.get_job_status(job.id)
             if status.is_completed:
-                result = client.get_job_result(job.id)
+                result = client.get_parse_job_result(job.id)
         """
-        result_format = self._parse_output_format(result_format)
-        job, _ = self._submit_job(input, processing_options, result_format)
+        job, _ = self._submit_job(input, processing_options)
         print(f"Job {job.id} submitted.")
         return job
 
-    def get_jobs(self) -> JobList:
-        """List all jobs for your account.
+    def get_parse_jobs(self) -> JobList:
+        """List all parse jobs for your account.
 
         Returns:
-            JobList response with collection metadata and jobs.
+            JobList response with collection metadata and parse jobs.
 
         Example::
 
-            job_list = client.get_jobs()
+            job_list = client.get_parse_jobs()
             for job in job_list.jobs:
                 print(f"{job.id}: {job.processing_status}")
         """
-        return self._list_jobs()
+        return self._list_parse_jobs()
 
-    def get_job_details(self, job_id: str) -> ParseJob:
+    def get_parse_job_details(self, job_id: str) -> ParseJob:
         """Get the full parse-job resource for a job.
 
         Args:
@@ -205,10 +193,10 @@ class ByteITClient:
 
         Example::
 
-            job = client.get_job_details("job_123")
+            job = client.get_parse_job_details("job_123")
             print(job.result_format)
         """
-        return self._get_job_details(job_id)
+        return self._get_parse_job_details(job_id)
 
     def get_job_status(self, job_id: str) -> JobStatus:
         """Check the lightweight processing status of a job.
@@ -223,15 +211,24 @@ class ByteITClient:
 
             status = client.get_job_status("job_123")
             if status.is_completed:
-                result = client.get_job_result("job_123")
+                result = client.get_parse_job_result("job_123")
         """
         return self._get_job_status(job_id)
 
-    def get_job_result(self, job_id: str) -> bytes:
-        """Download the result of a completed job.
+    def get_parse_job_result(
+        self,
+        job_id: str,
+        result_format: str | OutputFormat | None = None,
+    ) -> bytes:
+        """Download the result of a completed parse job.
 
         Args:
             job_id: The job ID.
+            result_format: Optional output format override. When omitted, the
+                backend returns the format that was requested when the job was
+                created. Supported values are ``OutputFormat.TXT``,
+                ``OutputFormat.JSON``, ``OutputFormat.MD``,
+                ``OutputFormat.HTML``, and ``OutputFormat.EXCEL``.
 
         Returns:
             Parsed content as bytes.
@@ -241,11 +238,160 @@ class ByteITClient:
 
         Example::
 
-            result = client.get_job_result("job_123")
-            with open("output.md", "wb") as f:
+            result = client.get_parse_job_result("job_123")
+            result = client.get_parse_job_result(
+                "job_123", result_format=OutputFormat.TXT
+            )
+            with open("output.txt", "wb") as f:
                 f.write(result)
         """
-        return self._download_result(job_id)
+        if result_format is None:
+            return self._download_parse_result(job_id)
+
+        fmt = self._parse_output_format(result_format)
+        return self._download_parse_result(job_id, result_format=fmt)
+
+    # ==================== EXTRACTION PUBLIC API ====================
+
+    def extract(
+        self,
+        parse_job_id: str,
+        schema: type | dict[str, Any],
+        output: None | str | Path = None,
+        extraction_complexity: str = "medium",
+    ) -> dict[str, Any]:
+        """Run extraction on a completed parse job and wait for the result.
+
+        Submits an extraction job against an existing parse job, polls until
+        processing completes, and returns the extracted fields as a dictionary.
+        For non-blocking usage, see :meth:`extract_async`.
+
+        Args:
+            parse_job_id: ID of a completed
+                :class:`~byteit.models.ParseJob.ParseJob` to extract from.
+            schema: A subclass of
+                :class:`~byteit.models.ExtractionSchema.ExtractionSchema`
+                or a raw JSON schema dict defining the fields to extract.
+            output: Optional file path to save the JSON result to disk.
+            extraction_complexity: Complexity tier for the extraction.
+                One of ``"low"``, ``"medium"``, or ``"high"``.
+                Defaults to ``"medium"``.
+
+        Returns:
+            Extracted fields as a dictionary matching the provided schema.
+
+        Example::
+
+            from byteit import ExtractionSchema
+            from pydantic import Field
+
+            class InvoiceSchema(ExtractionSchema):
+                invoice_number: str | None = Field(description="Invoice number.")
+                total_amount: str | None = Field(description="Total amount due.")
+
+            result = client.extract(
+                parse_job_id, InvoiceSchema, extraction_complexity="medium"
+            )
+        """
+        job = self._create_extract_job(parse_job_id, schema, extraction_complexity)
+        print(f"Extraction job {job.id} created. Waiting for completion...")
+        self._wait_for_extract_completion(job.id, job)
+
+        result = self._download_extract_result(job.id)
+
+        if isinstance(output, (str, Path)):
+            Path(output).write_text(
+                json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+
+        return result
+
+    def extract_async(
+        self,
+        parse_job_id: str,
+        schema: type | dict[str, Any],
+        extraction_complexity: str = "medium",
+    ) -> ExtractJob:
+        """Submit a structured field extraction job and return immediately.
+
+        Use this for non-blocking workflows. Check progress with
+        :meth:`get_job_status`, and retrieve results with
+        :meth:`get_extract_job_result`.
+
+        Args:
+            parse_job_id: ID of a completed
+                :class:`~byteit.models.ParseJob.ParseJob` to extract from.
+            schema: A subclass of
+                :class:`~byteit.models.ExtractionSchema.ExtractionSchema`
+                or a raw JSON schema dict defining the fields to extract.
+            extraction_complexity: Complexity tier for the extraction.
+                One of ``"low"``, ``"medium"``, or ``"high"``.
+                Defaults to ``"medium"``.
+
+        Returns:
+            ExtractJob object with ``id`` and ``processing_status``.
+
+        Example::
+
+            job = client.extract_async(
+                parse_job_id, InvoiceSchema, extraction_complexity="high"
+            )
+            # ... do other work ...
+            status = client.get_job_status(job.id)
+            if status.is_completed:
+                result = client.get_extract_job_result(job.id)
+        """
+        job = self._create_extract_job(parse_job_id, schema, extraction_complexity)
+        print(f"Extraction job {job.id} submitted.")
+        return job
+
+    def get_extract_jobs(self) -> ExtractJobList:
+        """List all extraction jobs for your account.
+
+        Returns:
+            ExtractJobList with collection metadata and extract jobs.
+
+        Example::
+
+            job_list = client.get_extract_jobs()
+            for job in job_list.jobs:
+                print(f"{job.id}: {job.processing_status}")
+        """
+        return self._list_extract_jobs()
+
+    def get_extract_job_details(self, job_id: str) -> ExtractJob:
+        """Get the full extract-job resource.
+
+        Args:
+            job_id: The extraction job ID.
+
+        Returns:
+            ExtractJob object with status and metadata.
+
+        Example::
+
+            job = client.get_extract_job_details("job_123")
+            print(job.processing_status)
+        """
+        return self._get_extract_job_details(job_id)
+
+    def get_extract_job_result(self, job_id: str) -> dict[str, Any]:
+        """Download the result of a completed extraction job.
+
+        Args:
+            job_id: The extraction job ID.
+
+        Returns:
+            Extracted fields as a dictionary.
+
+        Raises:
+            JobProcessingError: If the job has not completed yet.
+
+        Example::
+
+            result = client.get_extract_job_result("job_123")
+        """
+        return self._download_extract_result(job_id)
 
     # ==================== JOB SUBMISSION ====================
 
@@ -253,7 +399,7 @@ class ByteITClient:
         self,
         input: str | Path | InputConnector,
         processing_options: ProcessingOptions | dict | None = None,
-        result_format: OutputFormat = OutputFormat.MD,
+        result_format: OutputFormat = OutputFormat.JSON,
         output: None | str | Path = None,
     ) -> tuple[ParseJob, InputConnector]:
         """Validate inputs, build connectors, and create a job.
@@ -273,6 +419,105 @@ class ByteITClient:
             result_format=result_format,
         )
         return job, input_connector
+
+    # ==================== EXTRACTION INTERNAL METHODS ====================
+
+    def _create_extract_job(
+        self,
+        parse_job_id: str,
+        schema: type | dict[str, Any],
+        extraction_complexity: str = "medium",
+    ) -> ExtractJob:
+        """Submit a new extraction job for an existing parse job."""
+        schema_dict = self._build_schema_dict(schema)
+        response = self._request(
+            "POST",
+            self._build_job_collection_path(EXTRACT_JOBS_PATH),
+            json={
+                "parse_job_id": parse_job_id,
+                "schema": schema_dict,
+                "extraction_complexity": extraction_complexity,
+            },
+        )
+        job_data = self._extract_job_data(response, primary_key="extract_job")
+        return ExtractJob.from_dict(job_data)
+
+    def _list_extract_jobs(self) -> ExtractJobList:
+        """List all extract jobs."""
+        response = self._request(
+            "GET", self._build_job_collection_path(EXTRACT_JOBS_PATH)
+        )
+        return ExtractJobList.from_dict(response)
+
+    def _get_extract_job_details(self, job_id: str) -> ExtractJob:
+        """Get current extract-job details."""
+        response = self._request(
+            "GET", self._build_job_resource_path(job_id, EXTRACT_JOBS_PATH)
+        )
+        job_data = self._extract_job_data(response, primary_key="extract_job")
+        return ExtractJob.from_dict(job_data)
+
+    def _download_extract_result(self, job_id: str) -> dict[str, Any]:
+        """Download the JSON result of a completed extraction job."""
+        data = self._request(
+            "GET", self._build_job_result_path(job_id, EXTRACT_JOBS_PATH)
+        )
+        data = data if isinstance(data, dict) else {}
+        if not data.get("ready", True):
+            status = data.get("processing_status", "unknown")
+            raise JobProcessingError(f"Result not available. Job status: {status}")
+
+        result = data.get("result", data)
+        if not isinstance(result, dict):
+            return data
+        return result
+
+    def _wait_for_extract_completion(self, job_id: str, job: ExtractJob) -> ExtractJob:
+        """Wait for an extraction job to complete with adaptive polling."""
+        iteration = 1
+        job_snapshot = job
+
+        while True:
+            status = self._get_job_status(job_id)
+            job_snapshot = ExtractJob(
+                id=job_snapshot.id,
+                processing_status=status.processing_status,
+                input_job_id=job_snapshot.input_job_id,
+                nickname=job_snapshot.nickname,
+                processing_time_seconds=job_snapshot.processing_time_seconds,
+                credits_cost=job_snapshot.credits_cost,
+                extraction_schema=job_snapshot.extraction_schema,
+                extraction_complexity=job_snapshot.extraction_complexity,
+            )
+
+            if status.is_completed:
+                return job_snapshot
+
+            if status.is_failed:
+                raise JobProcessingError(
+                    f"Extraction job failed: {status.message or 'Unknown error'}"
+                )
+
+            poll_interval = min(1 * (1.5 ** (iteration - 1)), 10)
+            time.sleep(poll_interval)
+            iteration += 1
+
+    def _build_schema_dict(self, schema: type | dict[str, Any]) -> dict[str, Any]:
+        """Convert a schema class or raw dict to a JSON schema payload."""
+        if isinstance(schema, dict):
+            return schema
+
+        # Duck-type check: ExtractionSchema subclass (avoids hard pydantic import)
+        build_fn = getattr(schema, "build_api_schema", None)
+        if callable(build_fn):
+            return build_fn()
+
+        # Fall back: plain Pydantic BaseModel class
+        json_schema_fn = getattr(schema, "model_json_schema", None)
+        if callable(json_schema_fn):
+            return json_schema_fn()
+
+        raise ValidationError("schema must be a dict or an ExtractionSchema subclass.")
 
     # ==================== CONNECTOR CONVERTERS ====================
 
@@ -302,15 +547,18 @@ class ByteITClient:
         if isinstance(result_format, str):
             normalized_result_format = result_format.strip().lower()
             for output_format in OutputFormat:
-                if normalized_result_format == output_format.name.lower() or (
-                    output_format is not OutputFormat.EXCEL
-                    and normalized_result_format == output_format.value.lower()
+                if normalized_result_format in (
+                    output_format.name.lower(),
+                    output_format.value.lower(),
                 ):
                     return output_format
 
-        supported_formats = ", ".join(
-            output_format.name.lower() for output_format in OutputFormat
-        )
+        supported_tokens = []
+        for output_format in OutputFormat:
+            for token in (output_format.name.lower(), output_format.value.lower()):
+                if token not in supported_tokens:
+                    supported_tokens.append(token)
+        supported_formats = ", ".join(supported_tokens)
         raise ValidationError(
             f"result_format must be an OutputFormat or one of: {supported_formats}"
         )
@@ -372,12 +620,12 @@ class ByteITClient:
 
         # Return job from response
         if "job_id" in response:
-            return self._get_job_details(response["job_id"])
+            return self._get_parse_job_details(response["job_id"])
 
         job_data = self._extract_job_data(response, primary_key="parse_job")
         return ParseJob.from_dict(job_data)
 
-    def _get_job_details(self, job_id: str) -> ParseJob:
+    def _get_parse_job_details(self, job_id: str) -> ParseJob:
         """Get current parse-job details."""
         response = self._request(
             "GET", self._build_job_resource_path(job_id, PARSE_JOBS_PATH)
@@ -394,8 +642,8 @@ class ByteITClient:
         """Backward-compatible alias for the lightweight status endpoint."""
         return self._get_job_status(job_id)
 
-    def _list_jobs(self) -> JobList:
-        """List all jobs."""
+    def _list_parse_jobs(self) -> JobList:
+        """List all parse jobs."""
         response = self._request("GET", self._build_job_collection_path(PARSE_JOBS_PATH))
         return JobList.from_dict(response)
 
@@ -431,10 +679,17 @@ class ByteITClient:
             time.sleep(poll_interval)
             iteration += 1
 
-    def _download_result(self, job_id: str) -> bytes:
-        """Download job result."""
+    def _download_parse_result(
+        self,
+        job_id: str,
+        result_format: OutputFormat | None = None,
+    ) -> bytes:
+        """Download parse job result."""
         url = self._build_url(self._build_job_result_path(job_id, PARSE_JOBS_PATH))
-        response = self._session.get(url, timeout=self.DEFAULT_TIMEOUT)
+        params = (
+            {"output_format": result_format.value} if result_format is not None else {}
+        )
+        response = self._session.get(url, params=params, timeout=self.DEFAULT_TIMEOUT)
         response.raise_for_status()
 
         content_disposition = response.headers.get("Content-Disposition", "")
@@ -509,8 +764,6 @@ class ByteITClient:
                 id=job_id,
                 processing_status=processing_status,
                 result_format="",
-                create_time=datetime.now(),
-                update_time=datetime.now(),
                 processing_error=processing_error,
             )
 
@@ -518,11 +771,6 @@ class ByteITClient:
             id=job.id,
             processing_status=processing_status,
             result_format=job.result_format,
-            name=job.name,
-            uid=job.uid,
-            create_time=job.create_time,
-            update_time=job.update_time,
-            delete_time=job.delete_time,
             nickname=job.nickname,
             metadata=job.metadata,
             processing_options=job.processing_options,
@@ -574,35 +822,6 @@ class ByteITClient:
             raise ServerError(message, response.status_code, data)
 
         raise ByteITError(message, response.status_code, data)
-
-    def _try_display_result(
-        self, result_bytes: bytes, result_format: OutputFormat
-    ) -> None:
-        """Try to display result in notebook environment."""
-        if result_format is OutputFormat.EXCEL:
-            return
-
-        try:
-            # Check if we're in a notebook environment
-            from IPython.display import HTML, JSON, Markdown, display
-
-            content = result_bytes.decode("utf-8", errors="replace")
-
-            if result_format is OutputFormat.JSON:
-                try:
-                    data = json.loads(content)
-                    display(JSON(data, expanded=True))
-                except json.JSONDecodeError:
-                    display(Markdown(f"```json\n{content}\n```"))
-            elif result_format is OutputFormat.MD:
-                display(Markdown(content))
-            elif result_format is OutputFormat.HTML:
-                display(HTML(content))
-            else:  # txt or unknown
-                display(Markdown(f"```\n{content}\n```"))
-        except ImportError:
-            # Not in a notebook, do nothing
-            pass
 
     # ==================== CONTEXT MANAGER ====================
 
