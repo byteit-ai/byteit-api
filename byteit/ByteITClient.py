@@ -326,7 +326,7 @@ class ByteITClient:
         self,
         parse_job_id: str,
         schema: type | dict[str, Any],
-        extraction_complexity: str = "low",
+        extraction_complexity: str = "medium",
     ) -> ExtractJob:
         """Submit a structured field extraction job and return immediately.
 
@@ -342,7 +342,7 @@ class ByteITClient:
                 or a raw JSON schema dict defining the fields to extract.
             extraction_complexity: Complexity tier for the extraction.
                 One of ``"low"``, ``"medium"``, or ``"high"``.
-                Defaults to ``"low"``.
+                Defaults to ``"medium"``.
 
         Returns:
             ExtractJob object with ``id`` and ``processing_status``.
@@ -442,7 +442,7 @@ class ByteITClient:
         self,
         parse_job_id: str,
         schema: type | dict[str, Any],
-        extraction_complexity: str = "low",
+        extraction_complexity: str = "medium",
     ) -> ExtractJob:
         """Submit a new extraction job for an existing parse job."""
         schema_dict = self._build_schema_dict(schema)

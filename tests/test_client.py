@@ -944,7 +944,7 @@ class TestExtractionEndpointRouting:
 
     @patch.object(ByteITClient, "_request")
     def test_create_extract_job_posts_to_correct_endpoint(self, mock_request):
-        """_create_extract_job POSTs to /v1/jobs/parse-jobs/<id>/extract-jobs/."""
+        """_create_extract_job POSTs to the extract-job collection endpoint."""
         client = ByteITClient("test_key")
         mock_request.return_value = {
             "extract_job": {"id": "ext_123", "processing_status": "pending"}
@@ -1009,7 +1009,7 @@ class TestExtract:
         result = client.extract("parse_123", _InvoiceSchema)
 
         assert result == {"invoice_number": "INV-001"}
-        mock_create.assert_called_once_with("parse_123", _InvoiceSchema, "low")
+        mock_create.assert_called_once_with("parse_123", _InvoiceSchema, "medium")
         mock_wait.assert_called_once_with(mock_job.id, mock_job)
         mock_download.assert_called_once_with(mock_job.id)
 
@@ -1064,7 +1064,7 @@ class TestExtractAsync:
         result = client.extract_async("parse_123", _InvoiceSchema)
 
         assert result is mock_job
-        mock_create.assert_called_once_with("parse_123", _InvoiceSchema, "low")
+        mock_create.assert_called_once_with("parse_123", _InvoiceSchema, "medium")
 
     @patch.object(ByteITClient, "_create_extract_job")
     def test_extract_async_does_not_wait_or_download(self, mock_create):
