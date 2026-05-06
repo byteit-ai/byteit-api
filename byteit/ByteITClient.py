@@ -133,8 +133,6 @@ class ByteITClient:
         # If output is a file path, save it
         if isinstance(output, (str, Path)):
             Path(output).write_bytes(result_bytes)
-        elif output is None:
-            self._try_display_result(result_bytes, OutputFormat.JSON)
 
         return result_bytes
 
@@ -824,35 +822,6 @@ class ByteITClient:
             raise ServerError(message, response.status_code, data)
 
         raise ByteITError(message, response.status_code, data)
-
-    def _try_display_result(
-        self, result_bytes: bytes, result_format: OutputFormat
-    ) -> None:
-        """Try to display result in notebook environment."""
-        if result_format is OutputFormat.EXCEL:
-            return
-
-        try:
-            # Check if we're in a notebook environment
-            from IPython.display import HTML, JSON, Markdown, display
-
-            content = result_bytes.decode("utf-8", errors="replace")
-
-            if result_format is OutputFormat.JSON:
-                try:
-                    data = json.loads(content)
-                    display(JSON(data, expanded=True))
-                except json.JSONDecodeError:
-                    display(Markdown(f"```json\n{content}\n```"))
-            elif result_format is OutputFormat.MD:
-                display(Markdown(content))
-            elif result_format is OutputFormat.HTML:
-                display(HTML(content))
-            else:  # txt or unknown
-                display(Markdown(f"```\n{content}\n```"))
-        except ImportError:
-            # Not in a notebook, do nothing
-            pass
 
     # ==================== CONTEXT MANAGER ====================
 

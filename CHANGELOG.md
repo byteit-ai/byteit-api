@@ -8,6 +8,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 
+## [1.1.0] - 2026-05-06
+
+### Breaking Changes
+- Renamed parse-job public methods to explicit parse naming:
+  - `get_jobs()` -> `get_parse_jobs()`
+  - `get_job_details(job_id)` -> `get_parse_job_details(job_id)`
+  - `get_job_result(job_id)` -> `get_parse_job_result(job_id)`
+- Removed `result_format` parameter from `parse()` and `parse_async()`.
+  Parse job submission now defaults to JSON internally.
+
+### Added
+- Structured extraction workflow for completed parse jobs:
+  - `extract(parse_job_id, schema, output=None, extraction_complexity="medium")`
+  - `extract_async(parse_job_id, schema, extraction_complexity="medium")`
+  - `get_extract_jobs()`, `get_extract_job_details(job_id)`,
+    `get_extract_job_result(job_id)`
+- Optional download-time output selection for async parse results via
+  `get_parse_job_result(job_id, result_format=...)`.
+- New extraction domain models and schema support:
+  - `ExtractJob`, `ExtractJobList`, `ExtractionSchema`
+  - `ExtractionSchema` export via package `__init__` when available
+
+### Changed
+- Parse and extract operations now use dedicated endpoints under `/v1/jobs/`:
+  - parse jobs under `parse-jobs`
+  - extract jobs under `extract-jobs`
+- `get_job_status(job_id)` continues using the generic lightweight status path
+  while detail and result operations route to parse/extract-specific endpoints.
+- `result_format` validation accepts both enum names and backend value tokens
+  (for example `"excel"` and `"zip"`).
+- Dependency set now includes `pydantic` for extraction schema flows.
+
+
 ## [1.0.1] - 2026-04-29
 
 ### Added

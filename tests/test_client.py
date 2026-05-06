@@ -1,8 +1,7 @@
 """Tests for ByteITClient."""
 
-import sys
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 import requests
@@ -460,33 +459,6 @@ class TestParse:
         )
         mock_download.assert_called_once_with("job_123")
 
-    @patch.object(ByteITClient, "_try_display_result")
-    @patch.object(ByteITClient, "_download_parse_result")
-    @patch.object(ByteITClient, "_wait_for_completion")
-    @patch.object(ByteITClient, "_submit_job")
-    def test_parse_calls_display_when_no_output(
-        self,
-        mock_submit,
-        mock_wait,  # noqa: ARG002
-        mock_download,
-        mock_display,
-    ):
-        """Parse calls display when output is None."""
-        client = ByteITClient("test_key")
-
-        mock_connector = Mock()
-        mock_job = Mock()
-        mock_job.id = "job_123"
-        mock_submit.return_value = (mock_job, mock_connector)
-
-        mock_download.return_value = b"parsed content"
-
-        result = client.parse("test.pdf")
-
-        assert result == b"parsed content"
-        mock_display.assert_called_once_with(b"parsed content", OutputFormat.JSON)
-
-    @patch.object(ByteITClient, "_try_display_result")
     @patch.object(ByteITClient, "_download_parse_result")
     @patch.object(ByteITClient, "_wait_for_completion")
     @patch.object(ByteITClient, "_submit_job")
@@ -495,7 +467,6 @@ class TestParse:
         mock_submit,
         mock_wait,  # noqa: ARG002
         mock_download,
-        mock_display,  # noqa: ARG002
     ):
         """Parse always submits jobs requesting JSON output."""
         client = ByteITClient("test_key")
@@ -742,96 +713,6 @@ class TestGetParseJobs:
 
         assert result == b"result content"
         mock_download.assert_called_once_with("job_123")
-
-
-def _make_ipython_mock():
-    """Build a minimal sys.modules mock for IPython.display."""
-    mock_display_mod = MagicMock()
-    mock_ipython = MagicMock()
-    mock_ipython.display = mock_display_mod
-    return mock_ipython, mock_display_mod
-
-
-class TestDisplayResult:
-    """Test _try_display_result method."""
-
-    def test_display_json_in_notebook(self):
-        """Display JSON when IPython is available."""
-        client = ByteITClient("test_key")
-        mock_ipython, mock_display_mod = _make_ipython_mock()
-
-        with patch.dict(
-            sys.modules,
-            {"IPython": mock_ipython, "IPython.display": mock_display_mod},
-        ):
-            client._try_display_result(b'{"key": "value"}', OutputFormat.JSON)
-
-        mock_display_mod.display.assert_called_once()
-        mock_display_mod.JSON.assert_called_once()
-
-    def test_display_markdown_in_notebook(self):
-        """Display Markdown when IPython is available."""
-        client = ByteITClient("test_key")
-        mock_ipython, mock_display_mod = _make_ipython_mock()
-
-        with patch.dict(
-            sys.modules,
-            {"IPython": mock_ipython, "IPython.display": mock_display_mod},
-        ):
-            client._try_display_result(b"# Header", OutputFormat.MD)
-
-        mock_display_mod.display.assert_called_once()
-        mock_display_mod.Markdown.assert_called_once()
-
-    def test_display_html_in_notebook(self):
-        """Display HTML when IPython is available."""
-        client = ByteITClient("test_key")
-        mock_ipython, mock_display_mod = _make_ipython_mock()
-
-        with patch.dict(
-            sys.modules,
-            {"IPython": mock_ipython, "IPython.display": mock_display_mod},
-        ):
-            client._try_display_result(b"<h1>Header</h1>", OutputFormat.HTML)
-
-        mock_display_mod.display.assert_called_once()
-        mock_display_mod.HTML.assert_called_once()
-
-    def test_display_text_in_notebook(self):
-        """Display text with code block when IPython is available."""
-        client = ByteITClient("test_key")
-        mock_ipython, mock_display_mod = _make_ipython_mock()
-
-        with patch.dict(
-            sys.modules,
-            {"IPython": mock_ipython, "IPython.display": mock_display_mod},
-        ):
-            client._try_display_result(b"Plain text", OutputFormat.TXT)
-
-        mock_display_mod.display.assert_called_once()
-        mock_display_mod.Markdown.assert_called_once()
-
-    def test_skip_display_for_excel_result(self):
-        """Skip notebook display for Excel archive results."""
-        client = ByteITClient("test_key")
-        mock_ipython, mock_display_mod = _make_ipython_mock()
-
-        with patch.dict(
-            sys.modules,
-            {"IPython": mock_ipython, "IPython.display": mock_display_mod},
-        ):
-            client._try_display_result(
-                b"PK\x03\x04binary zip content", OutputFormat.EXCEL
-            )
-
-        mock_display_mod.display.assert_not_called()
-
-    def test_display_handles_import_error(self):
-        """Gracefully skip display when IPython is not available."""
-        client = ByteITClient("test_key")
-        # Remove IPython from sys.modules to simulate it not being installed
-        with patch.dict(sys.modules, {"IPython": None, "IPython.display": None}):
-            client._try_display_result(b"test", OutputFormat.TXT)  # must not raise
 
 
 # ---------------------------------------------------------------------------
