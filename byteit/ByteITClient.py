@@ -98,9 +98,8 @@ class ByteITClient:
     def parse(
         self,
         input: str | Path | InputConnector,
-        output: None | str | Path = None,
         processing_options: ProcessingOptions | dict | None = None,
-        result_format: str | OutputFormat = OutputFormat.MD,
+        output: None | str | Path = None,
     ) -> bytes:
         """Parse a document and wait for the result.
 
@@ -113,10 +112,6 @@ class ByteITClient:
             processing_options: ProcessingOptions or dict with keys:
                 ``languages`` (list[str]), ``page_range`` (str), and
                 ``extraction_type`` (str or ExtractionType).
-            result_format: Output format enum. Supported values are
-                ``OutputFormat.TXT``, ``OutputFormat.JSON``,
-                ``OutputFormat.MD``, ``OutputFormat.HTML``, and
-                ``OutputFormat.EXCEL``.
 
         Returns:
             Parsed content as bytes.
@@ -127,12 +122,8 @@ class ByteITClient:
 
             result = client.parse("document.pdf")
             client.parse("doc.pdf", output="result.md")
-            client.parse("doc.pdf", result_format=OutputFormat.JSON)
         """
-        result_format = self._parse_output_format(result_format)
-        job, input_connector = self._submit_job(
-            input, processing_options, result_format, output
-        )
+        job, input_connector = self._submit_job(input, processing_options, output=output)
         print(f"Job {job.id} created. Waiting for completion...")
         self._wait_for_completion(job.id, input_connector=input_connector, job=job)
 
@@ -143,7 +134,7 @@ class ByteITClient:
         if isinstance(output, (str, Path)):
             Path(output).write_bytes(result_bytes)
         elif output is None:
-            self._try_display_result(result_bytes, result_format)
+            self._try_display_result(result_bytes, OutputFormat.JSON)
 
         return result_bytes
 
@@ -151,7 +142,6 @@ class ByteITClient:
         self,
         input: str | Path | InputConnector,
         processing_options: ProcessingOptions | dict | None = None,
-        result_format: str | OutputFormat = OutputFormat.MD,
     ) -> ParseJob:
         """Submit a document for parsing and return immediately.
 
@@ -164,10 +154,6 @@ class ByteITClient:
             processing_options: ProcessingOptions or dict with keys:
                 ``languages`` (list[str]), ``page_range`` (str), and
                 ``extraction_type`` (str or ExtractionType).
-            result_format: Output format enum. Supported values are
-                ``OutputFormat.TXT``, ``OutputFormat.JSON``,
-                ``OutputFormat.MD``, ``OutputFormat.HTML``, and
-                ``OutputFormat.EXCEL``.
 
         Returns:
             ParseJob object with ``id``, ``processing_status``, and other metadata.
@@ -180,8 +166,7 @@ class ByteITClient:
             if status.is_completed:
                 result = client.get_parse_job_result(job.id)
         """
-        result_format = self._parse_output_format(result_format)
-        job, _ = self._submit_job(input, processing_options, result_format)
+        job, _ = self._submit_job(input, processing_options)
         print(f"Job {job.id} submitted.")
         return job
 
@@ -259,12 +244,13 @@ class ByteITClient:
             result = client.get_parse_job_result(
                 "job_123", result_format=OutputFormat.TXT
             )
-            with open("output.md", "wb") as f:
+            with open("output.txt", "wb") as f:
                 f.write(result)
         """
-        fmt: OutputFormat | None = None
-        if result_format is not None:
-            fmt = self._parse_output_format(result_format)
+        if result_format is None:
+            return self._download_parse_result(job_id)
+
+        fmt = self._parse_output_format(result_format)
         return self._download_parse_result(job_id, result_format=fmt)
 
     # ==================== EXTRACTION PUBLIC API ====================
@@ -291,7 +277,7 @@ class ByteITClient:
             output: Optional file path to save the JSON result to disk.
             extraction_complexity: Complexity tier for the extraction.
                 One of ``"low"``, ``"medium"``, or ``"high"``.
-                Defaults to ``"low"``.
+                Defaults to ``"medium"``.
 
         Returns:
             Extracted fields as a dictionary matching the provided schema.
@@ -415,7 +401,7 @@ class ByteITClient:
         self,
         input: str | Path | InputConnector,
         processing_options: ProcessingOptions | dict | None = None,
-        result_format: OutputFormat = OutputFormat.MD,
+        result_format: OutputFormat = OutputFormat.JSON,
         output: None | str | Path = None,
     ) -> tuple[ParseJob, InputConnector]:
         """Validate inputs, build connectors, and create a job.
@@ -569,9 +555,12 @@ class ByteITClient:
                 ):
                     return output_format
 
-        supported_formats = ", ".join(
-            output_format.name.lower() for output_format in OutputFormat
-        )
+        supported_tokens = []
+        for output_format in OutputFormat:
+            for token in (output_format.name.lower(), output_format.value.lower()):
+                if token not in supported_tokens:
+                    supported_tokens.append(token)
+        supported_formats = ", ".join(supported_tokens)
         raise ValidationError(
             f"result_format must be an OutputFormat or one of: {supported_formats}"
         )
