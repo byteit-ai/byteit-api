@@ -180,3 +180,14 @@ jobs:
             echo "| Commit message | ✅ \`chore(release): ${{ steps.version.outputs.version }}\` |"
             echo "| Tag \`v${{ steps.version.outputs.version }}\` | ✅ available |"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  notify-failure:
+    name: AdolfoBOT — Notify Failure
+    needs: [release-check]
+    if: failure()
+    uses: byteit-ai/.github/.github/workflows/adolfobot.yml@main
+    with:
+      workflow_name: "Release Readiness"
+      extra_context: |
+        Release validation failed. Check the version files, changelog, and release commit message before retrying.
+    secrets: inherit

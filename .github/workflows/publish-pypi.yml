@@ -12,6 +12,8 @@ jobs:
   validate:
     name: Validate release
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
 
     steps:
       - name: Checkout repository
@@ -20,7 +22,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: "3.8"
 
@@ -81,7 +83,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: "3.8"
 
@@ -106,7 +108,18 @@ jobs:
             echo ""
             echo "| Field | Value |"
             echo "|-------|-------|"
-            echo "| Version | \`${{ steps.tag.outputs.version }}\` |"
+            echo "| Version | \`${{ needs.validate.outputs.version }}\` |"
             echo "| Tag | \`${{ github.ref_name }}\` |"
             echo "| Status | ✅ Published to PyPI |"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  notify-failure:
+    name: AdolfoBOT — Notify Failure
+    needs: [validate, publish]
+    if: failure()
+    uses: byteit-ai/.github/.github/workflows/adolfobot.yml@main
+    with:
+      workflow_name: "Publish to PyPI (release tags)"
+      extra_context: |
+        Release tag validation or PyPI publication failed. Inspect the tag, version files, and package build logs.
+    secrets: inherit
