@@ -399,7 +399,6 @@ class ByteITClient:
         self,
         input: str | Path | InputConnector,
         processing_options: ProcessingOptions | dict | None = None,
-        result_format: OutputFormat = OutputFormat.JSON,
         output: None | str | Path = None,
     ) -> tuple[ParseJob, InputConnector]:
         """Validate inputs, build connectors, and create a job.
@@ -416,7 +415,6 @@ class ByteITClient:
             input_connector=input_connector,
             output_connector=output_connector,
             processing_options=processing_options,
-            result_format=result_format,
         )
         return job, input_connector
 
@@ -569,7 +567,6 @@ class ByteITClient:
         self,
         input_connector: InputConnector,
         output_connector: OutputConnector,
-        result_format: OutputFormat,
         processing_options: ProcessingOptions | None = None,
     ) -> ParseJob:
         """Create a processing job."""
@@ -579,7 +576,6 @@ class ByteITClient:
 
         # Build base request data
         data: dict[str, Any] = {
-            "output_format": result_format.value,
             "processing_options": json.dumps(
                 processing_options.to_dict() if processing_options else {}
             ),
