@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 from types import TracebackType
 from typing import Any
+from urllib.parse import quote
 
 import requests
 
@@ -31,6 +32,8 @@ from .models.JobStatus import JobStatus
 from .models.OutputFormat import OutputFormat
 from .models.ParseJob import ParseJob
 from .models.ProcessingOptions import ProcessingOptions
+from .models.SavedSchema import SavedSchema
+from .models.SavedSchemaList import SavedSchemaList
 from .progress import ProgressTracker
 
 # API configuration
@@ -39,6 +42,7 @@ API_BASE = f"/{API_VERSION}"
 JOBS_PATH = "jobs"
 PARSE_JOBS_PATH = "parse-jobs"
 EXTRACT_JOBS_PATH = "extract-jobs"
+SCHEMAS_PATH = "schemas"
 
 
 class ByteITClient:
@@ -56,6 +60,10 @@ class ByteITClient:
         get_extract_jobs():               List all extract jobs for your account.
         get_extract_job_details(job_id):  Get the full extract-job resource.
         get_extract_job_result(job_id):   Download the result of a completed extraction.
+        save_schema(name, schema):        Save a reusable extraction schema.
+        get_saved_schemas():              List saved schemas for your account.
+        get_saved_schema(name):           Retrieve one saved schema by name.
+        delete_saved_schema(name):        Delete one saved schema by name.
 
     Examples:
         Synchronous (blocking)::
@@ -73,8 +81,8 @@ class ByteITClient:
     """
 
     # BASE_URL = "https://api.byteit.ai"
-    # BASE_URL = "http://127.0.0.1:8000"
-    BASE_URL = "https://byteit.ai"
+    BASE_URL = "http://127.0.0.1:8000"
+    # BASE_URL = "https://byteit.ai"
     DEFAULT_TIMEOUT = 60 * 30  # 30 minutes
 
     def __init__(self, api_key: str):
@@ -256,7 +264,7 @@ class ByteITClient:
     def extract(
         self,
         parse_job_id: str,
-        schema: type | dict[str, Any],
+        schema: type | dict[str, Any] | SavedSchema,
         output: None | str | Path = None,
         extraction_complexity: str = "medium",
     ) -> dict[str, Any]:
@@ -309,7 +317,7 @@ class ByteITClient:
     def extract_async(
         self,
         parse_job_id: str,
-        schema: type | dict[str, Any],
+        schema: type | dict[str, Any] | SavedSchema,
         extraction_complexity: str = "medium",
     ) -> ExtractJob:
         """Submit a structured field extraction job and return immediately.
@@ -393,6 +401,95 @@ class ByteITClient:
         """
         return self._download_extract_result(job_id)
 
+    # ==================== SAVED SCHEMA PUBLIC API ====================
+
+    def save_schema(
+        self,
+        name: str,
+        schema: type | dict[str, Any] | SavedSchema,
+    ) -> SavedSchema:
+        """Save a reusable extraction schema for the authenticated user.
+
+        Args:
+            name: Human-readable schema name.
+            schema: A subclass of
+                :class:`~byteit.models.ExtractionSchema.ExtractionSchema`
+                or a raw JSON schema dict.
+
+        Returns:
+            SavedSchema object with the persisted name and schema payload.
+
+        Example::
+
+            saved_schema = client.save_schema("invoice", InvoiceSchema)
+            print(saved_schema.name)
+        """
+        normalized_name = self._normalize_schema_name(name)
+        schema_dict = self._build_schema_dict(schema)
+
+        try:
+            return self._create_saved_schema(name=normalized_name, schema=schema_dict)
+        except ValidationError as exc:
+            if not self._is_duplicate_saved_schema_error(exc):
+                raise
+
+            existing_schema = self._get_saved_schema(normalized_name)
+            if existing_schema.schema_json == schema_dict:
+                return existing_schema
+
+            raise ValidationError(
+                f"Schema '{normalized_name}' already exists with different content. "
+                "Load it with get_saved_schema() or delete it before saving a "
+                "new definition.",
+                exc.status_code,
+                exc.response,
+            ) from exc
+
+    def get_saved_schemas(self) -> SavedSchemaList:
+        """List all saved schemas for the authenticated user.
+
+        Returns:
+            SavedSchemaList containing the saved schemas and list metadata.
+
+        Example::
+
+            saved_schemas = client.get_saved_schemas()
+            for saved_schema in saved_schemas.schemas:
+                print(saved_schema.name)
+        """
+        return self._list_saved_schemas()
+
+    def get_saved_schema(self, name: str) -> SavedSchema:
+        """Retrieve a saved schema by name.
+
+        Args:
+            name: Saved schema name.
+
+        Returns:
+            SavedSchema object.
+
+        Example::
+
+            saved_schema = client.get_saved_schema("invoice")
+            print(saved_schema.schema_json)
+        """
+        return self._get_saved_schema(name=name)
+
+    def delete_saved_schema(self, name: str) -> bool:
+        """Delete a saved schema by name.
+
+        Args:
+            name: Saved schema name.
+
+        Returns:
+            True when the schema was deleted.
+
+        Example::
+
+            client.delete_saved_schema("invoice")
+        """
+        return self._delete_saved_schema(name=name)
+
     # ==================== JOB SUBMISSION ====================
 
     def _submit_job(
@@ -425,7 +522,7 @@ class ByteITClient:
     def _create_extract_job(
         self,
         parse_job_id: str,
-        schema: type | dict[str, Any],
+        schema: type | dict[str, Any] | SavedSchema,
         extraction_complexity: str = "medium",
     ) -> ExtractJob:
         """Submit a new extraction job for an existing parse job."""
@@ -502,7 +599,10 @@ class ByteITClient:
             time.sleep(poll_interval)
             iteration += 1
 
-    def _build_schema_dict(self, schema: type | dict[str, Any]) -> dict[str, Any]:
+    def _build_schema_dict(
+        self,
+        schema: type | dict[str, Any] | SavedSchema,
+    ) -> dict[str, Any]:
         """Convert a schema class or raw dict to a JSON schema payload."""
         if isinstance(schema, dict):
             return schema
@@ -517,7 +617,39 @@ class ByteITClient:
         if callable(json_schema_fn):
             return json_schema_fn()
 
-        raise ValidationError("schema must be a dict or an ExtractionSchema subclass.")
+        raise ValidationError(
+            "schema must be a dict or an object exposing build_api_schema()."
+        )
+
+    def _create_saved_schema(
+        self,
+        name: str,
+        schema: type | dict[str, Any] | SavedSchema,
+    ) -> SavedSchema:
+        """Persist a reusable saved schema for the authenticated user."""
+        normalized_name = self._normalize_schema_name(name)
+        schema_dict = self._build_schema_dict(schema)
+        response = self._request(
+            "POST",
+            self._build_schema_collection_path(),
+            json={"name": normalized_name, "schema_json": schema_dict},
+        )
+        return SavedSchema.from_dict(response)
+
+    def _list_saved_schemas(self) -> SavedSchemaList:
+        """List all saved schemas for the authenticated user."""
+        response = self._request("GET", self._build_schema_collection_path())
+        return SavedSchemaList.from_dict(response)
+
+    def _get_saved_schema(self, name: str) -> SavedSchema:
+        """Retrieve a saved schema by name."""
+        response = self._request("GET", self._build_schema_resource_path(name))
+        return SavedSchema.from_dict(response)
+
+    def _delete_saved_schema(self, name: str) -> bool:
+        """Delete a saved schema by name."""
+        self._request("DELETE", self._build_schema_resource_path(name))
+        return True
 
     # ==================== CONNECTOR CONVERTERS ====================
 
@@ -735,6 +867,17 @@ class ByteITClient:
         """Build the generic jobs processing-status path."""
         return f"{self._build_job_resource_path(job_id)}status/"
 
+    def _build_schema_collection_path(self) -> str:
+        """Build the saved-schema collection path."""
+        segments = [API_BASE, SCHEMAS_PATH]
+        return "/" + "/".join(segment.strip("/") for segment in segments) + "/"
+
+    def _build_schema_resource_path(self, name: str) -> str:
+        """Build the saved-schema resource path for a schema name."""
+        normalized_name = self._normalize_schema_name(name)
+        encoded_name = quote(normalized_name, safe="")
+        return f"{self._build_schema_collection_path()}{encoded_name}/"
+
     def _extract_job_data(
         self,
         response: dict[str, Any],
@@ -745,6 +888,25 @@ class ByteITClient:
             primary_key,
             response.get("job", response.get("document", response)),
         )
+
+    def _normalize_schema_name(self, name: str) -> str:
+        """Normalize a saved-schema name before sending it to the API."""
+        if not isinstance(name, str):
+            raise ValidationError("name must be a non-empty string")
+
+        normalized_name = name.strip()
+        if not normalized_name:
+            raise ValidationError("name must be a non-empty string")
+
+        return normalized_name
+
+    def _is_duplicate_saved_schema_error(self, error: ValidationError) -> bool:
+        """Return True when a validation error represents duplicate saved-schema name."""
+        if error.status_code != 400:
+            return False
+
+        error_message = (error.message or "").lower()
+        return "schema" in error_message and "already exists" in error_message
 
     def _merge_job_status(
         self,
@@ -791,13 +953,18 @@ class ByteITClient:
     def _handle_response(self, response: requests.Response) -> dict[str, Any]:
         """Handle API response and raise appropriate exceptions."""
         # Success path
-        if response.status_code in (200, 201):
+        if response.status_code in (200, 201, 204):
             return response.json() if response.content else {}
 
         # Error path - extract details
         try:
             data: dict[str, Any] = response.json() if response.content else {}
-            message: str = data.get("detail", "") or response.text or "Request failed"
+            message: str = (
+                data.get("detail", "")
+                or data.get("error", "")
+                or response.text
+                or "Request failed"
+            )
         except (ValueError, requests.exceptions.JSONDecodeError):
             # Response is not JSON (e.g., HTML error page)
             data = {}

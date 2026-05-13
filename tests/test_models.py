@@ -8,6 +8,8 @@ from byteit.models.JobList import JobList
 from byteit.models.JobStatus import JobStatus
 from byteit.models.ParseJob import ParseJob
 from byteit.models.ProcessingOptions import ProcessingOptions
+from byteit.models.SavedSchema import SavedSchema
+from byteit.models.SavedSchemaList import SavedSchemaList
 
 
 class TestParseJob:
@@ -188,3 +190,60 @@ class TestProcessingOptions:
         """Invalid extraction type values are rejected."""
         with pytest.raises(ValueError, match="Invalid extraction type"):
             ProcessingOptions(extraction_type="invalid")
+
+
+class TestSavedSchema:
+    """Test SavedSchema model."""
+
+    def test_saved_schema_from_dict(self):
+        """SavedSchema.from_dict creates a model from API data."""
+        schema = SavedSchema.from_dict(
+            {
+                "name": "invoice-schema",
+                "schema_json": {"type": "object", "properties": {}},
+            }
+        )
+
+        assert schema.name == "invoice-schema"
+        assert schema.schema_json == {"type": "object", "properties": {}}
+
+    def test_saved_schema_from_dict_requires_schema_json(self):
+        """SavedSchema.from_dict rejects responses without schema_json."""
+        with pytest.raises(KeyError, match="schema_json"):
+            SavedSchema.from_dict({"name": "invoice-schema"})
+
+    def test_build_api_schema_returns_copy(self):
+        """build_api_schema returns a copy safe to mutate downstream."""
+        schema = SavedSchema(
+            name="invoice-schema",
+            schema_json={"type": "object", "properties": {"total": {"type": "number"}}},
+        )
+
+        result = schema.build_api_schema()
+        result["properties"]["total"]["type"] = "string"
+
+        assert schema.schema_json["properties"]["total"]["type"] == "number"
+
+
+class TestSavedSchemaList:
+    """Test SavedSchemaList model."""
+
+    def test_saved_schema_list_from_dict(self):
+        """SavedSchemaList.from_dict creates the list model from API data."""
+        schema_list = SavedSchemaList.from_dict(
+            {
+                "detail": "Retrieved 2 saved schemas.",
+                "count": 2,
+                "schemas": [
+                    {"name": "invoice", "schema_json": {"type": "object"}},
+                    {"name": "receipt", "schema_json": {"type": "array"}},
+                ],
+            }
+        )
+
+        assert schema_list.count == 2
+        assert schema_list.detail == "Retrieved 2 saved schemas."
+        assert [schema.name for schema in schema_list.schemas] == [
+            "invoice",
+            "receipt",
+        ]

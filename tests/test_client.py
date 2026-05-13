@@ -23,6 +23,8 @@ from byteit.models.ExtractJob import ExtractJob
 from byteit.models.OutputFormat import OutputFormat
 from byteit.models.ParseJob import ParseJob
 from byteit.models.ProcessingOptions import ProcessingOptions
+from byteit.models.SavedSchema import SavedSchema
+from byteit.models.SavedSchemaList import SavedSchemaList
 
 
 class TestByteITClientInit:
@@ -108,6 +110,29 @@ class TestHandleResponse:
 
         result = client._handle_response(response)
         assert result == {}
+
+    def test_204_without_content_returns_empty_dict(self):
+        """204 response without content returns empty dict."""
+        client = ByteITClient("test_key")
+        response = Mock(spec=requests.Response)
+        response.status_code = 204
+        response.content = b""
+
+        result = client._handle_response(response)
+
+        assert result == {}
+
+    def test_error_with_error_key_uses_plain_error_message(self):
+        """400 responses prefer the backend error key when present."""
+        client = ByteITClient("test_key")
+        response = Mock(spec=requests.Response)
+        response.status_code = 400
+        response.content = b'{"error": "Schema already exists"}'
+        response.json.return_value = {"error": "Schema already exists"}
+        response.text = '{"error": "Schema already exists"}'
+
+        with pytest.raises(ValidationError, match="Schema already exists"):
+            client._handle_response(response)
 
     def test_400_raises_validation_error(self):
         """400 status raises ValidationError."""
@@ -728,6 +753,17 @@ def _make_extract_job(
     return ExtractJob(id=job_id, processing_status=status)
 
 
+def _make_saved_schema(
+    name: str = "invoice-schema",
+    schema_json: dict[str, str] | None = None,
+) -> SavedSchema:
+    """Build a minimal SavedSchema for use in tests."""
+    if schema_json is None:
+        schema_json = {"type": "object"}
+
+    return SavedSchema(name=name, schema_json=schema_json)
+
+
 class _InvoiceSchema(ExtractionSchema):
     """Minimal ExtractionSchema subclass for testing."""
 
@@ -776,6 +812,21 @@ class TestBuildSchemaDict:
 
         assert result == {"type": "object"}
         mock_schema.model_json_schema.assert_called_once()
+
+    def test_saved_schema_instance_uses_build_api_schema(self):
+        """Loaded saved schemas can be reused as extract-job schemas."""
+        client = ByteITClient("test_key")
+        saved_schema = _make_saved_schema(
+            schema_json={"type": "object", "properties": {"invoice": {"type": "string"}}}
+        )
+
+        result = client._build_schema_dict(saved_schema)
+
+        assert result == {
+            "type": "object",
+            "properties": {"invoice": {"type": "string"}},
+        }
+        assert result is not saved_schema.schema_json
 
     def test_unsupported_type_raises_validation_error(self):
         """Object without schema methods raises ValidationError."""
@@ -838,6 +889,217 @@ class TestExtractionEndpointRouting:
 
         assert result is mock_job
         mock_internal.assert_called_once_with("ext_123")
+
+
+# ---------------------------------------------------------------------------
+# Saved schema endpoint routing
+# ---------------------------------------------------------------------------
+
+
+class TestSavedSchemaEndpointRouting:
+    """Test that saved schema methods use the correct API paths."""
+
+    @patch.object(ByteITClient, "_request")
+    def test_create_saved_schema_posts_to_correct_endpoint(self, mock_request):
+        """_create_saved_schema POSTs to the saved-schema collection endpoint."""
+        client = ByteITClient("test_key")
+        mock_request.return_value = {
+            "name": "invoice-schema",
+            "schema_json": {"type": "object"},
+        }
+
+        result = client._create_saved_schema(" invoice-schema ", _InvoiceSchema)
+
+        assert result.name == "invoice-schema"
+        mock_request.assert_called_once_with(
+            "POST",
+            "/v1/schemas/",
+            json={
+                "name": "invoice-schema",
+                "schema_json": client._build_schema_dict(_InvoiceSchema),
+            },
+        )
+
+    @patch.object(ByteITClient, "_request")
+    def test_list_saved_schemas_reads_correct_endpoint(self, mock_request):
+        """_list_saved_schemas GETs /v1/schemas/."""
+        client = ByteITClient("test_key")
+        mock_request.return_value = {
+            "detail": "Retrieved 1 saved schemas.",
+            "count": 1,
+            "schemas": [{"name": "invoice-schema", "schema_json": {"type": "object"}}],
+        }
+
+        result = client._list_saved_schemas()
+
+        assert isinstance(result, SavedSchemaList)
+        assert result.schemas[0].name == "invoice-schema"
+        mock_request.assert_called_once_with("GET", "/v1/schemas/")
+
+    @patch.object(ByteITClient, "_request")
+    def test_get_saved_schema_reads_correct_encoded_endpoint(self, mock_request):
+        """_get_saved_schema GETs an encoded schema-name resource path."""
+        client = ByteITClient("test_key")
+        mock_request.return_value = {
+            "name": "invoice schema",
+            "schema_json": {"type": "object"},
+        }
+
+        result = client._get_saved_schema("invoice schema")
+
+        assert result.name == "invoice schema"
+        mock_request.assert_called_once_with("GET", "/v1/schemas/invoice%20schema/")
+
+    @patch.object(ByteITClient, "_request")
+    def test_delete_saved_schema_uses_delete_and_returns_true(self, mock_request):
+        """_delete_saved_schema DELETEs the encoded resource path."""
+        client = ByteITClient("test_key")
+        mock_request.return_value = {}
+
+        result = client._delete_saved_schema("invoice schema")
+
+        assert result is True
+        mock_request.assert_called_once_with("DELETE", "/v1/schemas/invoice%20schema/")
+
+    def test_get_saved_schema_rejects_blank_names(self):
+        """Blank schema names are rejected before any request is made."""
+        client = ByteITClient("test_key")
+
+        with pytest.raises(ValidationError, match="name must be a non-empty string"):
+            client._get_saved_schema("   ")
+
+
+# ---------------------------------------------------------------------------
+# Saved schema public API
+# ---------------------------------------------------------------------------
+
+
+class TestSavedSchemaPublicApi:
+    """Test the public saved-schema methods."""
+
+    def test_save_schema_delegates_to_internal_create(self):
+        """save_schema() delegates to _create_saved_schema."""
+        client = ByteITClient("test_key")
+        expected = _make_saved_schema()
+
+        with patch.object(
+            client,
+            "_create_saved_schema",
+            return_value=expected,
+        ) as mock_internal:
+            result = client.save_schema("invoice-schema", _InvoiceSchema)
+
+        assert result is expected
+        mock_internal.assert_called_once_with(
+            name="invoice-schema",
+            schema=client._build_schema_dict(_InvoiceSchema),
+        )
+
+    def test_save_schema_returns_existing_when_duplicate_matches(self):
+        """Repeated saves of the same schema name and content are idempotent."""
+        client = ByteITClient("test_key")
+        expected = _make_saved_schema(
+            schema_json={"type": "object", "properties": {"foo": {"type": "string"}}}
+        )
+        duplicate_error = ValidationError(
+            "Schema with name 'invoice-schema' already exists for this user",
+            400,
+            {"error": "Schema with name 'invoice-schema' already exists for this user"},
+        )
+
+        with (
+            patch.object(
+                client,
+                "_create_saved_schema",
+                side_effect=duplicate_error,
+            ) as mock_create,
+            patch.object(
+                client,
+                "_get_saved_schema",
+                return_value=expected,
+            ) as mock_get,
+        ):
+            result = client.save_schema("invoice-schema", expected)
+
+        assert result is expected
+        mock_create.assert_called_once_with(
+            name="invoice-schema",
+            schema=expected.build_api_schema(),
+        )
+        mock_get.assert_called_once_with("invoice-schema")
+
+    def test_save_schema_raises_when_duplicate_has_different_content(self):
+        """Conflicting duplicate saves still fail with a helpful message."""
+        client = ByteITClient("test_key")
+        duplicate_error = ValidationError(
+            "Schema with name 'invoice-schema' already exists for this user",
+            400,
+            {"error": "Schema with name 'invoice-schema' already exists for this user"},
+        )
+        existing = _make_saved_schema(schema_json={"type": "object"})
+        new_schema = {
+            "type": "object",
+            "properties": {"foo": {"type": "string"}},
+        }
+
+        with (
+            patch.object(
+                client,
+                "_create_saved_schema",
+                side_effect=duplicate_error,
+            ),
+            patch.object(client, "_get_saved_schema", return_value=existing),
+            pytest.raises(ValidationError, match="delete it before saving"),
+        ):
+            client.save_schema("invoice-schema", new_schema)
+
+    def test_get_saved_schemas_delegates_to_internal_list(self):
+        """get_saved_schemas() delegates to _list_saved_schemas."""
+        client = ByteITClient("test_key")
+        expected = SavedSchemaList(
+            schemas=[_make_saved_schema()],
+            count=1,
+            detail="Retrieved 1 saved schemas.",
+        )
+
+        with patch.object(
+            client,
+            "_list_saved_schemas",
+            return_value=expected,
+        ) as mock_internal:
+            result = client.get_saved_schemas()
+
+        assert result is expected
+        mock_internal.assert_called_once_with()
+
+    def test_get_saved_schema_delegates_to_internal_get(self):
+        """get_saved_schema() delegates to _get_saved_schema."""
+        client = ByteITClient("test_key")
+        expected = _make_saved_schema()
+
+        with patch.object(
+            client,
+            "_get_saved_schema",
+            return_value=expected,
+        ) as mock_internal:
+            result = client.get_saved_schema("invoice-schema")
+
+        assert result is expected
+        mock_internal.assert_called_once_with(name="invoice-schema")
+
+    def test_delete_saved_schema_delegates_to_internal_delete(self):
+        """delete_saved_schema() delegates to _delete_saved_schema."""
+        client = ByteITClient("test_key")
+
+        with patch.object(
+            client,
+            "_delete_saved_schema",
+            return_value=True,
+        ) as mock_internal:
+            result = client.delete_saved_schema("invoice-schema")
+
+        assert result is True
+        mock_internal.assert_called_once_with(name="invoice-schema")
 
 
 # ---------------------------------------------------------------------------
