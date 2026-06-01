@@ -100,6 +100,7 @@ class ByteITClient:
         input: str | Path | InputConnector,
         processing_options: ProcessingOptions | dict | None = None,
         output: None | str | Path = None,
+        output_format: str | OutputFormat | None = None,
     ) -> bytes:
         """Parse a document and wait for the result.
 
@@ -112,6 +113,11 @@ class ByteITClient:
             processing_options: ProcessingOptions or dict with keys:
                 ``languages`` (list[str]), ``page_range`` (str), and
                 ``extraction_type`` (str or ExtractionType).
+            output_format: Optional output format override. When omitted, the
+                backend returns the format that was requested when the job was
+                created. Supported values are ``OutputFormat.TXT``,
+                ``OutputFormat.JSON``, ``OutputFormat.MD``,
+                ``OutputFormat.HTML``, and ``OutputFormat.EXCEL``.
 
         Returns:
             Parsed content as bytes.
@@ -122,13 +128,19 @@ class ByteITClient:
 
             result = client.parse("document.pdf")
             client.parse("doc.pdf", output="result.md")
+            client.parse("doc.pdf", output_format=OutputFormat.TXT)
         """
         job, input_connector = self._submit_job(input, processing_options, output=output)
         print(f"Job {job.id} created. Waiting for completion...")
         self._wait_for_completion(job.id, input_connector=input_connector, job=job)
 
         # Download result
-        result_bytes = self._download_parse_result(job.id)
+        fmt = (
+            self._parse_output_format(output_format)
+            if output_format is not None
+            else None
+        )
+        result_bytes = self._download_parse_result(job.id, result_format=fmt)
 
         # If output is a file path, save it
         if isinstance(output, (str, Path)):
@@ -399,7 +411,6 @@ class ByteITClient:
         self,
         input: str | Path | InputConnector,
         processing_options: ProcessingOptions | dict | None = None,
-        result_format: OutputFormat = OutputFormat.JSON,
         output: None | str | Path = None,
     ) -> tuple[ParseJob, InputConnector]:
         """Validate inputs, build connectors, and create a job.
@@ -416,7 +427,6 @@ class ByteITClient:
             input_connector=input_connector,
             output_connector=output_connector,
             processing_options=processing_options,
-            result_format=result_format,
         )
         return job, input_connector
 
@@ -569,7 +579,6 @@ class ByteITClient:
         self,
         input_connector: InputConnector,
         output_connector: OutputConnector,
-        result_format: OutputFormat,
         processing_options: ProcessingOptions | None = None,
     ) -> ParseJob:
         """Create a processing job."""
@@ -579,7 +588,6 @@ class ByteITClient:
 
         # Build base request data
         data: dict[str, Any] = {
-            "output_format": result_format.value,
             "processing_options": json.dumps(
                 processing_options.to_dict() if processing_options else {}
             ),
