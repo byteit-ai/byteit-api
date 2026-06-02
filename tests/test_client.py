@@ -406,7 +406,7 @@ class TestWaitForCompletion:
         self,
         mock_sleep,
         mock_get_status,
-        mock_tracker,  # noqa: ARG002
+        mock_tracker,
     ):
         """Polling intervals follow MIN(1*1.5^(x-1), 10) formula."""
         client = ByteITClient("test_key")
@@ -465,7 +465,7 @@ class TestParse:
     def test_parse_submits_json_by_default(
         self,
         mock_submit,
-        mock_wait,  # noqa: ARG002
+        mock_wait,
         mock_download,
     ):
         """Parse always submits jobs requesting JSON output."""
@@ -656,7 +656,7 @@ class TestContextManager:
         with client:
             pass
         # Session should be closed after context exit
-        # Note: We can't directly check if session is closed without internal access  # noqa: E501
+        # Note: We can't directly check if session is closed without internal access
 
 
 class TestGetParseJobs:

@@ -9,7 +9,7 @@ from byteit.progress import ProgressTracker
 class FakeBar:
     """Simple progress bar stub for tests."""
 
-    def __init__(self, *args, **kwargs):  # noqa: ARG002, D107
+    def __init__(self, *args, **kwargs):  # noqa: D107
         self.description = None
         self.total_updates = 0.0
         self.closed = False

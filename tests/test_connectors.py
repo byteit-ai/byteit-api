@@ -47,7 +47,7 @@ class TestLocalFileInputConnector:
     @patch("pathlib.Path.exists")
     @patch("pathlib.Path.is_file")
     @patch("builtins.open", new_callable=mock_open, read_data=b"file content")
-    def test_get_file_data(self, mock_file, mock_is_file, mock_exists):  # noqa: ARG002
+    def test_get_file_data(self, mock_file, mock_is_file, mock_exists):
         """get_file_data returns filename and file object."""
         mock_exists.return_value = True
         mock_is_file.return_value = True
