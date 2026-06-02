@@ -153,6 +153,10 @@ Common supported inputs include PDF, Word, PowerPoint, HTML, Markdown, plain tex
 
 When running in Jupyter, parse results are automatically displayed as JSON when possible. Pass `output=...` if you want to suppress inline display and save the response directly.
 
+## HTTP API Examples (cURL + TypeScript)
+
+For direct HTTP usage (without the SDK), including tested request snippets for every jobs endpoint, see [docs/api-curl-typescript-examples.md](docs/api-curl-typescript-examples.md).
+
 ## Resources
 
 - Studio: [studio.byteit.ai](https://studio.byteit.ai)

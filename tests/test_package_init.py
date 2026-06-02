@@ -67,3 +67,9 @@ class TestPackageVersionCheck:
         mock_should_check.assert_called_once_with()
         mock_get.assert_called_once_with("https://pypi.org/pypi/byteit/json", timeout=2)
         mock_warn.assert_not_called()
+
+
+def test_saved_schema_models_are_exported() -> None:
+    """Saved schema models are available from the package root."""
+    assert byteit.SavedSchema.__name__ == "SavedSchema"
+    assert byteit.SavedSchemaList.__name__ == "SavedSchemaList"
