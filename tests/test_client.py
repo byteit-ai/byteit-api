@@ -1,6 +1,7 @@
 """Tests for ByteITClient."""
 
 from pathlib import Path
+from typing import Any
 from unittest.mock import Mock, patch
 
 import pytest
@@ -755,7 +756,7 @@ def _make_extract_job(
 
 def _make_saved_schema(
     name: str = "invoice-schema",
-    schema_json: dict[str, str] | None = None,
+    schema_json: dict[str, Any] | None = None,
 ) -> SavedSchema:
     """Build a minimal SavedSchema for use in tests."""
     if schema_json is None:
@@ -901,23 +902,21 @@ class TestSavedSchemaEndpointRouting:
 
     @patch.object(ByteITClient, "_request")
     def test_create_saved_schema_posts_to_correct_endpoint(self, mock_request):
-        """_create_saved_schema POSTs to the saved-schema collection endpoint."""
+        """_create_saved_schema POSTs the given name and schema_json payload."""
         client = ByteITClient("test_key")
+        schema_json = client._build_schema_dict(_InvoiceSchema)
         mock_request.return_value = {
             "name": "invoice-schema",
-            "schema_json": {"type": "object"},
+            "schema_json": schema_json,
         }
 
-        result = client._create_saved_schema(" invoice-schema ", _InvoiceSchema)
+        result = client._create_saved_schema("invoice-schema", schema_json)
 
         assert result.name == "invoice-schema"
         mock_request.assert_called_once_with(
             "POST",
             "/v1/schemas/",
-            json={
-                "name": "invoice-schema",
-                "schema_json": client._build_schema_dict(_InvoiceSchema),
-            },
+            json={"name": "invoice-schema", "schema_json": schema_json},
         )
 
     @patch.object(ByteITClient, "_request")
@@ -992,7 +991,25 @@ class TestSavedSchemaPublicApi:
         assert result is expected
         mock_internal.assert_called_once_with(
             name="invoice-schema",
-            schema=client._build_schema_dict(_InvoiceSchema),
+            schema_json=client._build_schema_dict(_InvoiceSchema),
+        )
+
+    def test_save_schema_normalizes_name_before_create(self):
+        """save_schema() strips whitespace from the schema name."""
+        client = ByteITClient("test_key")
+        expected = _make_saved_schema()
+        schema_json = client._build_schema_dict(_InvoiceSchema)
+
+        with patch.object(
+            client,
+            "_create_saved_schema",
+            return_value=expected,
+        ) as mock_internal:
+            client.save_schema(" invoice-schema ", _InvoiceSchema)
+
+        mock_internal.assert_called_once_with(
+            name="invoice-schema",
+            schema_json=schema_json,
         )
 
     def test_save_schema_returns_existing_when_duplicate_matches(self):
@@ -1024,7 +1041,7 @@ class TestSavedSchemaPublicApi:
         assert result is expected
         mock_create.assert_called_once_with(
             name="invoice-schema",
-            schema=expected.build_api_schema(),
+            schema_json=expected.build_api_schema(),
         )
         mock_get.assert_called_once_with("invoice-schema")
 

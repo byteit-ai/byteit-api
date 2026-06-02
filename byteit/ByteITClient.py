@@ -289,9 +289,14 @@ class ByteITClient:
         Args:
             parse_job_id: ID of a completed
                 :class:`~byteit.models.ParseJob.ParseJob` to extract from.
-            schema: A subclass of
-                :class:`~byteit.models.ExtractionSchema.ExtractionSchema`
-                or a raw JSON schema dict defining the fields to extract.
+            schema: Extraction schema defining the fields to extract. Accepts
+                a subclass of
+                :class:`~byteit.models.ExtractionSchema.ExtractionSchema`,
+                a raw JSON schema dict, or a
+                :class:`~byteit.models.SavedSchema.SavedSchema` instance
+                (for example, from :meth:`get_saved_schema`). For saved
+                schemas, the ``schema_json`` field is sent to the API via
+                :meth:`~byteit.models.SavedSchema.SavedSchema.build_api_schema`.
             output: Optional file path to save the JSON result to disk.
             extraction_complexity: Complexity tier for the extraction.
                 One of ``"low"``, ``"medium"``, or ``"high"``.
@@ -341,9 +346,14 @@ class ByteITClient:
         Args:
             parse_job_id: ID of a completed
                 :class:`~byteit.models.ParseJob.ParseJob` to extract from.
-            schema: A subclass of
-                :class:`~byteit.models.ExtractionSchema.ExtractionSchema`
-                or a raw JSON schema dict defining the fields to extract.
+            schema: Extraction schema defining the fields to extract. Accepts
+                a subclass of
+                :class:`~byteit.models.ExtractionSchema.ExtractionSchema`,
+                a raw JSON schema dict, or a
+                :class:`~byteit.models.SavedSchema.SavedSchema` instance
+                (for example, from :meth:`get_saved_schema`). For saved
+                schemas, the ``schema_json`` field is sent to the API via
+                :meth:`~byteit.models.SavedSchema.SavedSchema.build_api_schema`.
             extraction_complexity: Complexity tier for the extraction.
                 One of ``"low"``, ``"medium"``, or ``"high"``.
                 Defaults to ``"medium"``.
@@ -425,8 +435,14 @@ class ByteITClient:
         Args:
             name: Human-readable schema name.
             schema: A subclass of
-                :class:`~byteit.models.ExtractionSchema.ExtractionSchema`
-                or a raw JSON schema dict.
+                :class:`~byteit.models.ExtractionSchema.ExtractionSchema`,
+                a raw JSON schema dict, or a
+                :class:`~byteit.models.SavedSchema.SavedSchema` instance.
+                The payload persisted as ``schema_json`` is taken from the
+                dict directly, from ``build_api_schema()`` on schema classes,
+                or from
+                :meth:`~byteit.models.SavedSchema.SavedSchema.build_api_schema`
+                when re-saving an existing saved schema.
 
         Returns:
             SavedSchema object with the persisted name and schema payload.
@@ -440,7 +456,9 @@ class ByteITClient:
         schema_dict = self._build_schema_dict(schema)
 
         try:
-            return self._create_saved_schema(name=normalized_name, schema=schema_dict)
+            return self._create_saved_schema(
+                name=normalized_name, schema_json=schema_dict
+            )
         except ValidationError as exc:
             if not self._is_duplicate_saved_schema_error(exc):
                 raise
@@ -613,7 +631,15 @@ class ByteITClient:
         self,
         schema: type | dict[str, Any] | SavedSchema,
     ) -> dict[str, Any]:
-        """Convert a schema class or raw dict to a JSON schema payload."""
+        """Convert a schema input to a JSON schema payload for the API.
+
+        Accepts a raw dict (returned as-is), an
+        :class:`~byteit.models.ExtractionSchema.ExtractionSchema` subclass,
+        a plain Pydantic model, or a
+        :class:`~byteit.models.SavedSchema.SavedSchema` instance. Saved
+        schemas and ExtractionSchema subclasses expose ``build_api_schema()``;
+        for saved schemas this returns a copy of ``schema_json``.
+        """
         if isinstance(schema, dict):
             return schema
 
@@ -634,15 +660,13 @@ class ByteITClient:
     def _create_saved_schema(
         self,
         name: str,
-        schema: type | dict[str, Any] | SavedSchema,
+        schema_json: dict[str, Any],
     ) -> SavedSchema:
-        """Persist a reusable saved schema for the authenticated user."""
-        normalized_name = self._normalize_schema_name(name)
-        schema_dict = self._build_schema_dict(schema)
+        """Persist a pre-built saved schema for the authenticated user."""
         response = self._request(
             "POST",
             self._build_schema_collection_path(),
-            json={"name": normalized_name, "schema_json": schema_dict},
+            json={"name": name, "schema_json": schema_json},
         )
         return SavedSchema.from_dict(response)
 
