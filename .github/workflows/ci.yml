@@ -1,0 +1,232 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [dev, main]
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: Lint
+    uses: byteit-ai/.github/.github/workflows/lint.yml@main
+
+  unit-tests:
+    name: Unit Tests
+    uses: byteit-ai/.github/.github/workflows/tests-unit.yml@main
+    secrets: inherit
+
+  jira-guard:
+    if: github.event_name == 'pull_request'
+    name: Jira Guard
+    permissions:
+      pull-requests: read
+      contents: read
+    uses: byteit-ai/.github/.github/workflows/jira-guard.yml@main
+    secrets:
+      JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+      JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+
+  release-readiness:
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    name: Release Readiness
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Detect release commit
+        id: release_meta
+        run: |
+          COMMIT_MSG=$(git log -1 --pretty=%s ${{ github.event.pull_request.head.sha }})
+          echo "commit_message=$COMMIT_MSG" >> "$GITHUB_OUTPUT"
+
+          if echo "$COMMIT_MSG" | grep -Eq '^chore\(release\): [0-9]+\.[0-9]+\.[0-9]+$'; then
+            VERSION=$(echo "$COMMIT_MSG" | sed -E 's/^chore\(release\): ([0-9]+\.[0-9]+\.[0-9]+)$/\1/')
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            echo "Release commit detected for version $VERSION"
+          else
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+            echo "No release commit detected; skipping release-readiness checks."
+          fi
+
+      - name: Install release check dependencies
+        if: steps.release_meta.outputs.is_release == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build twine ruff
+
+      - name: Ruff lint and format checks
+        if: steps.release_meta.outputs.is_release == 'true'
+        run: |
+          python -m ruff check .
+          python -m ruff format --check .
+
+      - name: Extract version from pyproject.toml
+        id: version
+        if: steps.release_meta.outputs.is_release == 'true'
+        run: |
+          VERSION=$(grep -E '^version\s*=\s*"[0-9]+\.[0-9]+\.[0-9]+"' pyproject.toml \
+            | sed -E 's/.*"([0-9]+\.[0-9]+\.[0-9]+)"/\1/')
+
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not extract version from pyproject.toml"
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Validate release commit version matches pyproject.toml
+        if: steps.release_meta.outputs.is_release == 'true'
+        run: |
+          if [ "${{ steps.release_meta.outputs.version }}" != "${{ steps.version.outputs.version }}" ]; then
+            echo "::error::Release commit version (${{ steps.release_meta.outputs.version }}) != pyproject.toml (${{ steps.version.outputs.version }})"
+            exit 1
+          fi
+
+      - name: Run release preflight script
+        if: steps.release_meta.outputs.is_release == 'true'
+        run: python scripts/release_preflight.py --pre-commit
+
+      - name: Check __init__.py fallback version
+        if: steps.release_meta.outputs.is_release == 'true'
+        run: |
+          INIT_VERSION=$(grep -E '__version__\s*=\s*"[0-9]+\.[0-9]+\.[0-9]+"' byteit/__init__.py \
+            | sed -E 's/.*"([0-9]+\.[0-9]+\.[0-9]+)".*/\1/')
+
+          if [ -z "$INIT_VERSION" ]; then
+            echo "::error::Could not extract fallback version from byteit/__init__.py"
+            exit 1
+          fi
+
+          if [ "$INIT_VERSION" != "${{ steps.version.outputs.version }}" ]; then
+            echo "::error::byteit/__init__.py fallback ($INIT_VERSION) != pyproject.toml (${{ steps.version.outputs.version }})"
+            exit 1
+          fi
+
+      - name: Check CHANGELOG entry
+        if: steps.release_meta.outputs.is_release == 'true'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          if ! grep -qE "^## \[$VERSION\] - [0-9]{4}-[0-9]{2}-[0-9]{2}" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md missing dated entry for version $VERSION (expected: ## [$VERSION] - YYYY-MM-DD)"
+            exit 1
+          fi
+
+      - name: Check Unreleased section is empty
+        if: steps.release_meta.outputs.is_release == 'true'
+        run: |
+          UNRELEASED=$(sed -n '/^## \[Unreleased\]/,/^## \[/{ /^## \[/d; p; }' CHANGELOG.md \
+            | grep -v '^\s*$' || true)
+
+          if [ -n "$UNRELEASED" ]; then
+            echo "::error::[Unreleased] section still has content - move it to the [${{ steps.version.outputs.version }}] section"
+            echo "Found:"
+            echo "$UNRELEASED"
+            exit 1
+          fi
+
+      - name: Validate semver bump from previous release
+        if: steps.release_meta.outputs.is_release == 'true'
+        run: |
+          git fetch --tags origin
+
+          PREV_TAG=$(git tag -l 'v*' --sort=-v:refname | head -n 1 || true)
+
+          if [ -z "$PREV_TAG" ]; then
+            echo "No previous release tag found. Skipping bump-shape validation."
+            exit 0
+          fi
+
+          PREV_VERSION="${PREV_TAG#v}"
+
+          NEXT_VERSION="${{ steps.version.outputs.version }}"
+
+          IFS='.' read -r PREV_X PREV_Y PREV_Z <<< "$PREV_VERSION"
+          IFS='.' read -r NEXT_X NEXT_Y NEXT_Z <<< "$NEXT_VERSION"
+
+          if [ "$NEXT_X" -eq $((PREV_X + 1)) ] && [ "$NEXT_Y" -eq 0 ] && [ "$NEXT_Z" -eq 0 ]; then
+            BUMP_TYPE="major"
+          elif [ "$NEXT_X" -eq "$PREV_X" ] && [ "$NEXT_Y" -eq $((PREV_Y + 1)) ] && [ "$NEXT_Z" -eq 0 ]; then
+            BUMP_TYPE="minor"
+          elif [ "$NEXT_X" -eq "$PREV_X" ] && [ "$NEXT_Y" -eq "$PREV_Y" ] && [ "$NEXT_Z" -eq $((PREV_Z + 1)) ]; then
+            BUMP_TYPE="patch"
+          else
+            echo "::error::Invalid semver bump: previous=$PREV_VERSION, next=$NEXT_VERSION"
+            echo "Expected exactly one valid bump: major (+1.0.0), minor (+0.1.0 with patch reset), or patch (+0.0.1)."
+            exit 1
+          fi
+
+          echo "Detected semver bump type: $BUMP_TYPE"
+
+      - name: Check last commit message
+        if: steps.release_meta.outputs.is_release == 'true'
+        run: |
+          COMMIT_MSG=$(git log -1 --pretty=%s ${{ github.event.pull_request.head.sha }})
+          VERSION="${{ steps.version.outputs.version }}"
+
+          if ! echo "$COMMIT_MSG" | grep -Eq '^chore\(release\): [0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Last commit must be: chore(release): $VERSION (got: $COMMIT_MSG)"
+            exit 1
+          fi
+
+          MSG_VERSION=$(echo "$COMMIT_MSG" | sed -E 's/^chore\(release\): ([0-9]+\.[0-9]+\.[0-9]+)$/\1/')
+          if [ "$MSG_VERSION" != "$VERSION" ]; then
+            echo "::error::Commit message version ($MSG_VERSION) != pyproject.toml ($VERSION)"
+            exit 1
+          fi
+
+      - name: Check tag does not already exist
+        if: steps.release_meta.outputs.is_release == 'true'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          if git rev-parse "refs/tags/v$VERSION" >/dev/null 2>&1; then
+            echo "::error::Tag v$VERSION already exists - this version was already released"
+            exit 1
+          fi
+
+  ci:
+    name: Status
+    if: always()
+    runs-on: ubuntu-latest
+    needs: [lint, unit-tests, jira-guard, release-readiness]
+    steps:
+      - name: Validate required CI jobs
+        env:
+          LINT_RESULT: ${{ needs.lint.result }}
+          UNIT_TESTS_RESULT: ${{ needs.unit-tests.result }}
+          JIRA_RESULT: ${{ needs.jira-guard.result }}
+          RELEASE_RESULT: ${{ needs.release-readiness.result }}
+        run: |
+          set -euo pipefail
+
+          if [ "$LINT_RESULT" != "success" ]; then
+            echo "Lint failed or was cancelled." >&2
+            exit 1
+          fi
+
+          if [ "$JIRA_RESULT" != "success" ] && [ "$JIRA_RESULT" != "skipped" ]; then
+            echo "Jira Guard failed or was cancelled." >&2
+            exit 1
+          fi
+
+          if [ "$UNIT_TESTS_RESULT" != "success" ] && [ "$UNIT_TESTS_RESULT" != "skipped" ]; then
+            echo "Unit Tests failed or was cancelled." >&2
+            exit 1
+          fi
+
+          if [ "$RELEASE_RESULT" != "success" ] && [ "$RELEASE_RESULT" != "skipped" ]; then
+            echo "Release Readiness failed or was cancelled." >&2
+            exit 1
+          fi
+
+          echo "All required CI checks passed."
