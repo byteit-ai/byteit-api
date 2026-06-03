@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Optional `queue_for_batch` parameter on `parse()` and `parse_async()` for
+  lower-cost batch processing (non-immediate).
 
 ## [1.1.0] - 2026-05-06
 
