@@ -17,15 +17,21 @@ repos:
     hooks:
       - id: release-preflight
         name: release preflight checks
-        entry: python scripts/release_preflight.py --pre-commit
-        language: system
+        entry: scripts/release_preflight.py
+        args: [--pre-commit]
+        language: python
+        additional_dependencies:
+          - build>=1.0.0
+          - twine>=4.0.0
+          - ruff==0.15.2
         pass_filenames: false
         files: ^(pyproject\.toml|byteit/__init__\.py|CHANGELOG\.md)$
         stages: [pre-commit]
 
       - id: release-commit-title
         name: release commit title check
-        entry: python scripts/release_preflight.py --commit-msg
-        language: system
+        entry: scripts/release_preflight.py
+        args: [--commit-msg]
+        language: python
         pass_filenames: true
         stages: [commit-msg]

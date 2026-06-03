@@ -293,6 +293,55 @@ class TestCreateJob:
             "/v1/jobs/parse-jobs/",
         )
 
+    @patch.object(ByteITClient, "_request")
+    @patch.object(ByteITClient, "_get_parse_job_details")
+    def test_create_job_sends_queue_for_batch_when_true(
+        self, mock_get_status, mock_request
+    ):
+        """Create job includes queue_for_batch when batch processing is requested."""
+        client = ByteITClient("test_key")
+        mock_request.return_value = {"job_id": "job_123"}
+        mock_get_status.return_value = Mock(spec=ParseJob)
+
+        connector = Mock()
+        connector.to_dict.return_value = {"type": "localfile"}
+        connector.get_file_data.return_value = ("test.pdf", Mock())
+
+        output_connector = Mock()
+        output_connector.to_dict.return_value = {"type": "localfile"}
+
+        client._create_job(
+            connector,
+            output_connector,
+            OutputFormat.JSON,
+            queue_for_batch=True,
+        )
+
+        request_kwargs = mock_request.call_args.kwargs
+        assert request_kwargs["data"]["queue_for_batch"] == "true"
+
+    @patch.object(ByteITClient, "_request")
+    @patch.object(ByteITClient, "_get_parse_job_details")
+    def test_create_job_omits_queue_for_batch_by_default(
+        self, mock_get_status, mock_request
+    ):
+        """Create job does not send queue_for_batch when not requested."""
+        client = ByteITClient("test_key")
+        mock_request.return_value = {"job_id": "job_123"}
+        mock_get_status.return_value = Mock(spec=ParseJob)
+
+        connector = Mock()
+        connector.to_dict.return_value = {"type": "localfile"}
+        connector.get_file_data.return_value = ("test.pdf", Mock())
+
+        output_connector = Mock()
+        output_connector.to_dict.return_value = {"type": "localfile"}
+
+        client._create_job(connector, output_connector, OutputFormat.JSON)
+
+        request_kwargs = mock_request.call_args.kwargs
+        assert "queue_for_batch" not in request_kwargs["data"]
+
 
 class TestJobEndpointRouting:
     """Test job endpoint routing for parse jobs versus generic job status."""
@@ -453,7 +502,9 @@ class TestParse:
         result = client.parse("test.pdf")
 
         assert result == b"parsed content"
-        mock_submit.assert_called_once_with("test.pdf", None, output=None)
+        mock_submit.assert_called_once_with(
+            "test.pdf", None, output=None, queue_for_batch=False
+        )
         mock_wait.assert_called_once_with(
             "job_123", input_connector=mock_connector, job=mock_job
         )
@@ -481,7 +532,9 @@ class TestParse:
         result = client.parse("test.pdf")
 
         assert result == b"parsed content"
-        mock_submit.assert_called_once_with("test.pdf", None, output=None)
+        mock_submit.assert_called_once_with(
+            "test.pdf", None, output=None, queue_for_batch=False
+        )
 
     @patch.object(ByteITClient, "_download_parse_result")
     @patch.object(ByteITClient, "_wait_for_completion")
@@ -528,7 +581,7 @@ class TestParseAsync:
         result = client.parse_async("test.pdf")
 
         assert result is mock_job
-        mock_submit.assert_called_once_with("test.pdf", None)
+        mock_submit.assert_called_once_with("test.pdf", None, queue_for_batch=False)
 
     @patch.object(ByteITClient, "_submit_job")
     def test_parse_async_with_options(self, mock_submit):
@@ -543,7 +596,7 @@ class TestParseAsync:
         result = client.parse_async("test.pdf", processing_options=opts)
 
         assert result is mock_job
-        mock_submit.assert_called_once_with("test.pdf", opts)
+        mock_submit.assert_called_once_with("test.pdf", opts, queue_for_batch=False)
 
     @patch.object(ByteITClient, "_submit_job")
     def test_parse_async_submits_json_by_default(self, mock_submit):
@@ -557,7 +610,7 @@ class TestParseAsync:
         result = client.parse_async("test.pdf")
 
         assert result is mock_job
-        mock_submit.assert_called_once_with("test.pdf", None)
+        mock_submit.assert_called_once_with("test.pdf", None, queue_for_batch=False)
 
     @patch.object(ByteITClient, "_submit_job")
     def test_parse_async_does_not_wait(self, mock_submit):
@@ -607,6 +660,7 @@ class TestSubmitJob:
             output_connector=mock_output_conn,
             processing_options=None,
             result_format=OutputFormat.JSON,
+            queue_for_batch=False,
         )
 
     @patch.object(ByteITClient, "_create_job")
@@ -638,6 +692,23 @@ class TestSubmitJob:
         assert call_kwargs["processing_options"].extraction_type is (
             ExtractionType.COMPLEX
         )
+
+    @patch.object(ByteITClient, "_create_job")
+    @patch.object(ByteITClient, "_to_output_connector")
+    @patch.object(ByteITClient, "_to_input_connector")
+    def test_submit_job_forwards_queue_for_batch(
+        self, mock_to_input, mock_to_output, mock_create
+    ):
+        """_submit_job forwards queue_for_batch to job creation."""
+        client = ByteITClient("test_key")
+
+        mock_to_input.return_value = Mock()
+        mock_to_output.return_value = Mock()
+        mock_create.return_value = Mock(spec=ParseJob)
+
+        client._submit_job("test.pdf", queue_for_batch=True)
+
+        assert mock_create.call_args.kwargs["queue_for_batch"] is True
 
 
 class TestContextManager:

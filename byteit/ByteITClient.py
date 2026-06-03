@@ -100,6 +100,7 @@ class ByteITClient:
         input: str | Path | InputConnector,
         processing_options: ProcessingOptions | dict | None = None,
         output: None | str | Path = None,
+        queue_for_batch: bool = False,
     ) -> bytes:
         """Parse a document and wait for the result.
 
@@ -112,6 +113,9 @@ class ByteITClient:
             processing_options: ProcessingOptions or dict with keys:
                 ``languages`` (list[str]), ``page_range`` (str), and
                 ``extraction_type`` (str or ExtractionType).
+            queue_for_batch: When ``True``, the job is queued for batch
+                processing at a reduced credit cost. Processing is not
+                immediate.
 
         Returns:
             Parsed content as bytes.
@@ -123,7 +127,12 @@ class ByteITClient:
             result = client.parse("document.pdf")
             client.parse("doc.pdf", output="result.md")
         """
-        job, input_connector = self._submit_job(input, processing_options, output=output)
+        job, input_connector = self._submit_job(
+            input,
+            processing_options,
+            output=output,
+            queue_for_batch=queue_for_batch,
+        )
         print(f"Job {job.id} created. Waiting for completion...")
         self._wait_for_completion(job.id, input_connector=input_connector, job=job)
 
@@ -140,6 +149,7 @@ class ByteITClient:
         self,
         input: str | Path | InputConnector,
         processing_options: ProcessingOptions | dict | None = None,
+        queue_for_batch: bool = False,
     ) -> ParseJob:
         """Submit a document for parsing and return immediately.
 
@@ -152,6 +162,9 @@ class ByteITClient:
             processing_options: ProcessingOptions or dict with keys:
                 ``languages`` (list[str]), ``page_range`` (str), and
                 ``extraction_type`` (str or ExtractionType).
+            queue_for_batch: When ``True``, the job is queued for batch
+                processing at a reduced credit cost. Processing is not
+                immediate.
 
         Returns:
             ParseJob object with ``id``, ``processing_status``, and other metadata.
@@ -164,7 +177,9 @@ class ByteITClient:
             if status.is_completed:
                 result = client.get_parse_job_result(job.id)
         """
-        job, _ = self._submit_job(input, processing_options)
+        job, _ = self._submit_job(
+            input, processing_options, queue_for_batch=queue_for_batch
+        )
         print(f"Job {job.id} submitted.")
         return job
 
@@ -401,6 +416,7 @@ class ByteITClient:
         processing_options: ProcessingOptions | dict | None = None,
         result_format: OutputFormat = OutputFormat.JSON,
         output: None | str | Path = None,
+        queue_for_batch: bool = False,
     ) -> tuple[ParseJob, InputConnector]:
         """Validate inputs, build connectors, and create a job.
 
@@ -417,6 +433,7 @@ class ByteITClient:
             output_connector=output_connector,
             processing_options=processing_options,
             result_format=result_format,
+            queue_for_batch=queue_for_batch,
         )
         return job, input_connector
 
@@ -571,6 +588,7 @@ class ByteITClient:
         output_connector: OutputConnector,
         result_format: OutputFormat,
         processing_options: ProcessingOptions | None = None,
+        queue_for_batch: bool = False,
     ) -> ParseJob:
         """Create a processing job."""
         connector_type = (
@@ -592,6 +610,9 @@ class ByteITClient:
         data["output_connection_data"] = (
             json.dumps(output_config) if output_config.get("type") else "{}"
         )
+
+        if queue_for_batch:
+            data["queue_for_batch"] = "true"
 
         # Prepare input based on type
         files: dict[str, Any] | None = None
