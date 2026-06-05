@@ -100,6 +100,7 @@ class ByteITClient:
         input: str | Path | InputConnector,
         processing_options: ProcessingOptions | dict | None = None,
         output: None | str | Path = None,
+        result_format: str | OutputFormat | None = None,
     ) -> bytes:
         """Parse a document and wait for the result.
 
@@ -112,6 +113,11 @@ class ByteITClient:
             processing_options: ProcessingOptions or dict with keys:
                 ``languages`` (list[str]), ``page_range`` (str), and
                 ``extraction_type`` (str or ExtractionType).
+            result_format: Optional output format override. When omitted, the
+                backend returns the format that was requested when the job was
+                created. Supported values are ``OutputFormat.TXT``,
+                ``OutputFormat.JSON``, ``OutputFormat.MD``,
+                ``OutputFormat.HTML``, and ``OutputFormat.EXCEL``.
 
         Returns:
             Parsed content as bytes.
@@ -120,15 +126,19 @@ class ByteITClient:
 
         Example::
 
-            result = client.parse("document.pdf")
-            client.parse("doc.pdf", output="result.md")
+            result = client.parse("doc.pdf", result_format=OutputFormat.TXT,
+            output="result.txt")
         """
         job, input_connector = self._submit_job(input, processing_options, output=output)
         print(f"Job {job.id} created. Waiting for completion...")
         self._wait_for_completion(job.id, input_connector=input_connector, job=job)
 
         # Download result
-        result_bytes = self._download_parse_result(job.id)
+        if result_format is None:
+            result_bytes = self._download_parse_result(job.id)
+        else:
+            fmt = self._parse_output_format(result_format)
+            result_bytes = self._download_parse_result(job.id, result_format=fmt)
 
         # If output is a file path, save it
         if isinstance(output, (str, Path)):
