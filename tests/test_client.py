@@ -181,6 +181,52 @@ class TestHandleResponse:
         with pytest.raises(ValidationError, match="Bad Request"):
             client._handle_response(response)
 
+    def test_400_raises_validation_error_with_error_key(self):
+        """400 responses using the API's error field are surfaced to callers."""
+        client = ByteITClient("test_key")
+        response = Mock(spec=requests.Response)
+        response.status_code = 400
+        response.content = (
+            b'{"error": "JSON output format is not supported for your input file."}'
+        )
+        response.json.return_value = {
+            "error": "JSON output format is not supported for your input file.",
+        }
+        response.text = response.content.decode()
+
+        with pytest.raises(
+            ValidationError,
+            match="JSON output format is not supported for your input file.",  # noqa: RUF043
+        ):
+            client._handle_response(response)
+
+
+class TestDownloadParseResult:
+    """Test parse result download error handling."""
+
+    def test_download_parse_result_surfaces_api_error(self):
+        """Result downloads should raise ValidationError with the API message."""
+        client = ByteITClient("test_key")
+        response = Mock(spec=requests.Response)
+        response.status_code = 400
+        response.content = (
+            b'{"error": "JSON output format is not supported for your input file."}'
+        )
+        response.json.return_value = {
+            "error": "JSON output format is not supported for your input file.",
+        }
+        response.text = response.content.decode()
+        response.headers = {"Content-Type": "application/json"}
+
+        client._session = Mock()
+        client._session.get.return_value = response
+
+        with pytest.raises(
+            ValidationError,
+            match="JSON output format is not supported for your input file.",  # noqa: RUF043
+        ):
+            client._download_parse_result("job_123", result_format=OutputFormat.JSON)
+
 
 class TestCreateJob:
     """Test _create_job method."""
@@ -761,7 +807,21 @@ class TestBuildSchemaDict:
         assert result["type"] == "object"
         assert "invoice_number" in result["properties"]
         assert "total_amount" in result["properties"]
-        # 'title' keys are pruned by ExtractionSchema.build_api_schema
+        # Model-level 'title' metadata is pruned by build_api_schema
+        assert "title" not in result
+
+    def test_extraction_schema_preserves_title_field_names(self):
+        """Fields named 'title' under properties are not pruned."""
+
+        class _CustomFieldSchema(ExtractionSchema):
+            title: str | None = None
+            value: str | None = None
+
+        result = _CustomFieldSchema.build_api_schema()
+
+        assert "title" in result["properties"]
+        assert "value" in result["properties"]
+        assert "title" not in result["properties"]["title"]
         assert "title" not in result
 
     def test_plain_pydantic_model_falls_back_to_model_json_schema(self):

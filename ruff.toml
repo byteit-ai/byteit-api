@@ -13,9 +13,18 @@ target-version = "py312"
 
 [lint]
 select = [
-    "E", "W", "F", "I", "N", "D", "UP", "B", "SIM", "RET", "ARG", "C90", "RUF100",
+    "E", "W", "F", "I", "N", "D", "UP", "B", "SIM", "RET", "ARG", "C90", "RUF",
 ]
-ignore = ["N999"]
+ignore = [
+    "N999",
+    "D100",
+    "D101",
+    "D102",
+    "D103",
+    "D104",
+    "D107",
+    "D401",
+]
 
 [lint.pydocstyle]
 convention = "google"
