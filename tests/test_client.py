@@ -196,7 +196,7 @@ class TestHandleResponse:
 
         with pytest.raises(
             ValidationError,
-            match="JSON output format is not supported for your input file.",
+            match="JSON output format is not supported for your input file.",  # noqa: RUF043
         ):
             client._handle_response(response)
 
@@ -223,7 +223,7 @@ class TestDownloadParseResult:
 
         with pytest.raises(
             ValidationError,
-            match="JSON output format is not supported for your input file.",
+            match="JSON output format is not supported for your input file.",  # noqa: RUF043
         ):
             client._download_parse_result("job_123", result_format=OutputFormat.JSON)
 

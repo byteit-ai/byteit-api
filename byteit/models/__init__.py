@@ -12,9 +12,9 @@ from .ProcessingOptions import ProcessingOptions
 
 __all__ = [
     "DocumentMetadata",
-    "ExtractionType",
     "ExtractJob",
     "ExtractJobList",
+    "ExtractionType",
     "JobList",
     "JobStatus",
     "OutputFormat",

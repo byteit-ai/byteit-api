@@ -14,11 +14,11 @@ from .connectors import InputConnector, LocalFileInputConnector
 class ProgressBar(Protocol):
     """Protocol for progress bar implementations."""
 
-    def set_description(self, desc: str) -> None: ...  # noqa: D102
+    def set_description(self, desc: str) -> None: ...
 
-    def update(self, n: float) -> None: ...  # noqa: D102
+    def update(self, n: float) -> None: ...
 
-    def close(self) -> None: ...  # noqa: D102
+    def close(self) -> None: ...
 
 
 @dataclass
@@ -34,7 +34,7 @@ class ProgressState:
 class ProgressTracker:
     """Track and display progress while processing a document."""
 
-    def __init__(  # noqa: D107
+    def __init__(
         self,
         input_connector: InputConnector | None = None,
         progress_bar_factory=tqdm,
