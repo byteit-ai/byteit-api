@@ -854,7 +854,8 @@ class ByteITClient:
             {"output_format": result_format.value} if result_format is not None else {}
         )
         response = self._session.get(url, params=params, timeout=self.DEFAULT_TIMEOUT)
-        response.raise_for_status()
+        if response.status_code not in (200, 201):
+            self._handle_response(response)
 
         content_disposition = response.headers.get("Content-Disposition", "")
         content_type = response.headers.get("Content-Type", "")
@@ -982,6 +983,22 @@ class ByteITClient:
         response = self._session.request(method, url, **kwargs)
         return self._handle_response(response)
 
+    @staticmethod
+    def _extract_error_message(
+        data: dict[str, Any],
+        response: requests.Response,
+    ) -> str:
+        """Return a human-readable API error message from a JSON error body."""
+        for key in ("detail", "error"):
+            value = data.get(key)
+            if isinstance(value, str) and value.strip():
+                return value
+
+        if response.text:
+            return response.text
+
+        return f"Request failed with status {response.status_code}"
+
     def _handle_response(self, response: requests.Response) -> dict[str, Any]:
         """Handle API response and raise appropriate exceptions."""
         # Success path
@@ -1000,9 +1017,7 @@ class ByteITClient:
         except (ValueError, requests.exceptions.JSONDecodeError):
             # Response is not JSON (e.g., HTML error page)
             data = {}
-            message = (
-                response.text or f"Request failed with status {response.status_code}"
-            )
+            message = self._extract_error_message(data, response)
 
         # Map status to exception
         ERROR_MAP: dict[int, type[Exception]] = {  # noqa: N806

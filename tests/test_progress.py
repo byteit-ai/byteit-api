@@ -9,22 +9,22 @@ from byteit.progress import ProgressTracker
 class FakeBar:
     """Simple progress bar stub for tests."""
 
-    def __init__(self, *args, **kwargs):  # noqa: ARG002, D107
+    def __init__(self, *args, **kwargs):
         self.description = None
         self.total_updates = 0.0
         self.closed = False
 
-    def set_description(self, desc: str) -> None:  # noqa: D102
+    def set_description(self, desc: str) -> None:
         self.description = desc
 
-    def update(self, n: float) -> None:  # noqa: D102
+    def update(self, n: float) -> None:
         self.total_updates += n
 
-    def close(self) -> None:  # noqa: D102
+    def close(self) -> None:
         self.closed = True
 
 
-def test_progress_message_ranges():  # noqa: D103
+def test_progress_message_ranges():
     tracker = ProgressTracker(progress_bar_factory=FakeBar)
 
     assert tracker._progress_message(0) == "Initialising"
@@ -40,7 +40,7 @@ def test_progress_message_ranges():  # noqa: D103
     )
 
 
-def test_estimate_times_for_extensions(monkeypatch):  # noqa: D103
+def test_estimate_times_for_extensions(monkeypatch):
     tracker = ProgressTracker(progress_bar_factory=FakeBar)
 
     monkeypatch.setattr(random, "gauss", lambda mean, sigma: mean)  # noqa: ARG005
@@ -52,7 +52,7 @@ def test_estimate_times_for_extensions(monkeypatch):  # noqa: D103
     assert tracker._estimate_processing_seconds("txt", None) == 3.0
 
 
-def test_update_advances_progress_with_time():  # noqa: D103
+def test_update_advances_progress_with_time():
     time_values = [0.0]
 
     def fake_time():
@@ -76,7 +76,7 @@ def test_update_advances_progress_with_time():  # noqa: D103
     assert tracker._bar.total_updates == 45.0
 
 
-def test_finalize_completes_bar():  # noqa: D103
+def test_finalize_completes_bar():
     tracker = ProgressTracker(progress_bar_factory=FakeBar)
     tracker._state.last_progress = 90.0
 

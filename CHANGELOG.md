@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 
+## [1.1.2] - 2026-06-08
+- Improved error handling for downloading result
+
+## [1.1.1] - 2026-06-05
+
+### Fixed
+- Restored `result_format` support for synchronous `parse()` so callers can
+  explicitly choose the returned output format.
+
+
 ## [1.1.0] - 2026-05-06
 
 ### Breaking Changes

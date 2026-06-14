@@ -14,9 +14,9 @@ from .SavedSchemaList import SavedSchemaList
 
 __all__ = [
     "DocumentMetadata",
-    "ExtractionType",
     "ExtractJob",
     "ExtractJobList",
+    "ExtractionType",
     "JobList",
     "JobStatus",
     "OutputFormat",

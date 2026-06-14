@@ -1,24 +1,26 @@
-name: Publish to PyPI (release tags)
+name: Publish to PyPI
 
 on:
-  push:
-    tags:
-      - "v*"
+  pull_request:
+    branches:
+      - main
+    types:
+      - closed
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  validate:
-    name: Validate release
+  validate-release:
+    name: Validate release metadata
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.tag.outputs.version }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
           fetch-depth: 0
 
       - name: Set up Python
@@ -26,13 +28,36 @@ jobs:
         with:
           python-version: "3.8"
 
-      - name: Extract tag version
-        id: tag
+      - name: Detect release commit
+        id: release_meta
         run: |
-          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
-          echo "version=${TAG_VERSION}" >> "$GITHUB_OUTPUT"
+          COMMIT_MSG=$(git log -1 --pretty=%s)
+          echo "Commit message: $COMMIT_MSG"
+
+          if echo "$COMMIT_MSG" | grep -Eq '^chore\(release\): [0-9]+\.[0-9]+\.[0-9]+$'; then
+            VERSION=$(echo "$COMMIT_MSG" | sed -E 's/^chore\(release\): ([0-9]+\.[0-9]+\.[0-9]+)$/\1/')
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+            echo "Release commit detected: v$VERSION"
+          else
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+            echo "version=" >> "$GITHUB_OUTPUT"
+            echo "tag=" >> "$GITHUB_OUTPUT"
+            echo "Not a release commit. Workflow will exit cleanly without publishing."
+          fi
+
+      - name: Ensure merge commit is on main
+        if: steps.release_meta.outputs.should_publish == 'true'
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor HEAD origin/main || {
+            echo "Merge commit is not on main"
+            exit 1
+          }
 
       - name: Validate release commit message
+        if: steps.release_meta.outputs.should_publish == 'true'
         run: |
           COMMIT_MSG=$(git log -1 --pretty=%s)
           echo "Commit message: $COMMIT_MSG"
@@ -43,44 +68,94 @@ jobs:
           fi
 
           MSG_VERSION=$(echo "$COMMIT_MSG" | sed -E 's/^chore\(release\): ([0-9]+\.[0-9]+\.[0-9]+)$/\1/')
-          if [ "$MSG_VERSION" != "${{ steps.tag.outputs.version }}" ]; then
-            echo "Commit version does not match tag"
+          if [ "$MSG_VERSION" != "${{ steps.release_meta.outputs.version }}" ]; then
+            echo "Commit version does not match release version"
             exit 1
           fi
 
       - name: Validate pyproject.toml version matches tag
+        if: steps.release_meta.outputs.should_publish == 'true'
         run: |
           FILE_VERSION=$(grep -E '^version\s*=\s*"[0-9]+\.[0-9]+\.[0-9]+"' pyproject.toml \
             | sed -E 's/.*"([0-9]+\.[0-9]+\.[0-9]+)"/\1/')
 
-          if [ "$FILE_VERSION" != "${{ steps.tag.outputs.version }}" ]; then
+          if [ "$FILE_VERSION" != "${{ steps.release_meta.outputs.version }}" ]; then
             echo "pyproject.toml version does not match tag"
             exit 1
           fi
 
       - name: Validate CHANGELOG entry exists
+        if: steps.release_meta.outputs.should_publish == 'true'
         run: |
-          if ! grep -q "\[${{ steps.tag.outputs.version }}\]" CHANGELOG.md; then
+          if ! grep -q "\[${{ steps.release_meta.outputs.version }}\]" CHANGELOG.md; then
             echo "CHANGELOG missing version section"
             exit 1
           fi
 
-      - name: Ensure tag commit is on main
+      - name: Validate semver bump against previous release tag
+        if: steps.release_meta.outputs.should_publish == 'true'
         run: |
-          git fetch origin main
-          git merge-base --is-ancestor HEAD origin/main || {
-            echo "Tagged commit is not on main"
+          git fetch --tags origin
+
+          CURRENT="${{ steps.release_meta.outputs.version }}"
+          PREV_TAG=$(git tag -l 'v*' --sort=-v:refname | grep -v "^v${CURRENT}$" | head -n 1 || true)
+
+          if [ -z "$PREV_TAG" ]; then
+            echo "No previous release tag found. Skipping bump-shape validation."
+            exit 0
+          fi
+
+          PREV="${PREV_TAG#v}"
+
+          IFS='.' read -r PREV_X PREV_Y PREV_Z <<< "$PREV"
+          IFS='.' read -r CURR_X CURR_Y CURR_Z <<< "$CURRENT"
+
+          if [ "$CURR_X" -eq $((PREV_X + 1)) ] && [ "$CURR_Y" -eq 0 ] && [ "$CURR_Z" -eq 0 ]; then
+            echo "Valid major bump from $PREV to $CURRENT"
+          elif [ "$CURR_X" -eq "$PREV_X" ] && [ "$CURR_Y" -eq $((PREV_Y + 1)) ] && [ "$CURR_Z" -eq 0 ]; then
+            echo "Valid minor bump from $PREV to $CURRENT"
+          elif [ "$CURR_X" -eq "$PREV_X" ] && [ "$CURR_Y" -eq "$PREV_Y" ] && [ "$CURR_Z" -eq $((PREV_Z + 1)) ]; then
+            echo "Valid patch bump from $PREV to $CURRENT"
+          else
+            echo "Invalid semver bump from previous release: $PREV -> $CURRENT"
+            echo "Expected exactly one valid bump: major (+1.0.0), minor (+0.1.0 with patch reset), or patch (+0.0.1)."
             exit 1
-          }
+          fi
+
+      - name: Create or validate release tag
+        if: steps.release_meta.outputs.should_publish == 'true'
+        run: |
+          TAG="${{ steps.release_meta.outputs.tag }}"
+
+          git fetch --tags origin
+
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            TAG_SHA=$(git rev-list -n 1 "$TAG")
+            HEAD_SHA=$(git rev-parse HEAD)
+
+            if [ "$TAG_SHA" != "$HEAD_SHA" ]; then
+              echo "Tag $TAG exists but points to $TAG_SHA instead of HEAD $HEAD_SHA"
+              exit 1
+            fi
+
+            echo "Tag $TAG already exists and points to current commit."
+          else
+            git tag "$TAG"
+            git push origin "$TAG"
+            echo "Created and pushed tag $TAG"
+          fi
 
   publish:
     name: Build and publish to PyPI
     runs-on: ubuntu-latest
-    needs: validate
+    needs: validate-release
+    if: needs.validate-release.outputs.should_publish == 'true'
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -108,7 +183,7 @@ jobs:
             echo ""
             echo "| Field | Value |"
             echo "|-------|-------|"
-            echo "| Version | \`${{ needs.validate.outputs.version }}\` |"
+            echo "| Version | \`${{ steps.tag.outputs.version }}\` |"
             echo "| Tag | \`${{ github.ref_name }}\` |"
             echo "| Status | ✅ Published to PyPI |"
           } >> "$GITHUB_STEP_SUMMARY"

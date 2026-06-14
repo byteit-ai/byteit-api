@@ -207,6 +207,52 @@ class TestHandleResponse:
         with pytest.raises(ValidationError, match="Bad Request"):
             client._handle_response(response)
 
+    def test_400_raises_validation_error_with_error_key(self):
+        """400 responses using the API's error field are surfaced to callers."""
+        client = ByteITClient("test_key")
+        response = Mock(spec=requests.Response)
+        response.status_code = 400
+        response.content = (
+            b'{"error": "JSON output format is not supported for your input file."}'
+        )
+        response.json.return_value = {
+            "error": "JSON output format is not supported for your input file.",
+        }
+        response.text = response.content.decode()
+
+        with pytest.raises(
+            ValidationError,
+            match="JSON output format is not supported for your input file.",  # noqa: RUF043
+        ):
+            client._handle_response(response)
+
+
+class TestDownloadParseResult:
+    """Test parse result download error handling."""
+
+    def test_download_parse_result_surfaces_api_error(self):
+        """Result downloads should raise ValidationError with the API message."""
+        client = ByteITClient("test_key")
+        response = Mock(spec=requests.Response)
+        response.status_code = 400
+        response.content = (
+            b'{"error": "JSON output format is not supported for your input file."}'
+        )
+        response.json.return_value = {
+            "error": "JSON output format is not supported for your input file.",
+        }
+        response.text = response.content.decode()
+        response.headers = {"Content-Type": "application/json"}
+
+        client._session = Mock()
+        client._session.get.return_value = response
+
+        with pytest.raises(
+            ValidationError,
+            match="JSON output format is not supported for your input file.",  # noqa: RUF043
+        ):
+            client._download_parse_result("job_123", result_format=OutputFormat.JSON)
+
 
 class TestCreateJob:
     """Test _create_job method."""
@@ -432,7 +478,7 @@ class TestWaitForCompletion:
         self,
         mock_sleep,
         mock_get_status,
-        mock_tracker,  # noqa: ARG002
+        mock_tracker,
     ):
         """Polling intervals follow MIN(1*1.5^(x-1), 10) formula."""
         client = ByteITClient("test_key")
@@ -491,7 +537,7 @@ class TestParse:
     def test_parse_submits_json_by_default(
         self,
         mock_submit,
-        mock_wait,  # noqa: ARG002
+        mock_wait,
         mock_download,
     ):
         """Parse always submits jobs requesting JSON output."""
@@ -682,7 +728,7 @@ class TestContextManager:
         with client:
             pass
         # Session should be closed after context exit
-        # Note: We can't directly check if session is closed without internal access  # noqa: E501
+        # Note: We can't directly check if session is closed without internal access
 
 
 class TestGetParseJobs:
