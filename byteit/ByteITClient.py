@@ -111,8 +111,10 @@ class ByteITClient:
             input: File path (str/Path) or InputConnector.
             output: Optional file path to save the result to disk.
             processing_options: ProcessingOptions or dict with keys:
-                ``languages`` (list[str]), ``page_range`` (str), and
-                ``extraction_type`` (str or ExtractionType).
+                ``languages`` (list[str]), ``page_range`` (str),
+                ``image_annotations`` (bool), ``force_image_annotations`` (bool),
+                ``table_enrichment`` (bool), and ``extraction_type`` (str or
+                ExtractionType).
             result_format: Optional output format override. When omitted, the
                 backend returns the format that was requested when the job was
                 created. Supported values are ``OutputFormat.TXT``,
@@ -160,8 +162,10 @@ class ByteITClient:
         Args:
             input: File path (str/Path) or InputConnector.
             processing_options: ProcessingOptions or dict with keys:
-                ``languages`` (list[str]), ``page_range`` (str), and
-                ``extraction_type`` (str or ExtractionType).
+                ``languages`` (list[str]), ``page_range`` (str),
+                ``image_annotations`` (bool), ``force_image_annotations`` (bool),
+                ``table_enrichment`` (bool), and ``extraction_type`` (str or
+                ExtractionType).
 
         Returns:
             ParseJob object with ``id``, ``processing_status``, and other metadata.
