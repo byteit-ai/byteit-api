@@ -100,7 +100,6 @@ class ByteITClient:
         input: str | Path | InputConnector,
         processing_options: ProcessingOptions | dict | None = None,
         output: None | str | Path = None,
-        queue_for_batch: bool = False,
     ) -> bytes:
         """Parse a document and wait for the result.
 
@@ -113,9 +112,6 @@ class ByteITClient:
             processing_options: ProcessingOptions or dict with keys:
                 ``languages`` (list[str]), ``page_range`` (str), and
                 ``extraction_type`` (str or ExtractionType).
-            queue_for_batch: When ``True``, the job is queued for batch
-                processing at a reduced credit cost. Processing is not
-                immediate.
 
         Returns:
             Parsed content as bytes.
@@ -131,7 +127,6 @@ class ByteITClient:
             input,
             processing_options,
             output=output,
-            queue_for_batch=queue_for_batch,
         )
         print(f"Job {job.id} created. Waiting for completion...")
         self._wait_for_completion(job.id, input_connector=input_connector, job=job)

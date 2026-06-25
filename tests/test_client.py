@@ -502,9 +502,7 @@ class TestParse:
         result = client.parse("test.pdf")
 
         assert result == b"parsed content"
-        mock_submit.assert_called_once_with(
-            "test.pdf", None, output=None, queue_for_batch=False
-        )
+        mock_submit.assert_called_once_with("test.pdf", None, output=None)
         mock_wait.assert_called_once_with(
             "job_123", input_connector=mock_connector, job=mock_job
         )
@@ -532,9 +530,7 @@ class TestParse:
         result = client.parse("test.pdf")
 
         assert result == b"parsed content"
-        mock_submit.assert_called_once_with(
-            "test.pdf", None, output=None, queue_for_batch=False
-        )
+        mock_submit.assert_called_once_with("test.pdf", None, output=None)
 
     @patch.object(ByteITClient, "_download_parse_result")
     @patch.object(ByteITClient, "_wait_for_completion")
@@ -611,6 +607,20 @@ class TestParseAsync:
 
         assert result is mock_job
         mock_submit.assert_called_once_with("test.pdf", None, queue_for_batch=False)
+
+    @patch.object(ByteITClient, "_submit_job")
+    def test_parse_async_forwards_queue_for_batch(self, mock_submit):
+        """parse_async forwards queue_for_batch to job submission."""
+        client = ByteITClient("test_key")
+
+        mock_job = Mock(spec=ParseJob)
+        mock_job.id = "job_123"
+        mock_submit.return_value = (mock_job, Mock())
+
+        result = client.parse_async("test.pdf", queue_for_batch=True)
+
+        assert result is mock_job
+        mock_submit.assert_called_once_with("test.pdf", None, queue_for_batch=True)
 
     @patch.object(ByteITClient, "_submit_job")
     def test_parse_async_does_not_wait(self, mock_submit):
