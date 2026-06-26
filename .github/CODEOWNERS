@@ -15,6 +15,7 @@ pyproject.toml          @adofersan
 CHANGELOG.md            @adofersan
 CONTRIBUTING.md         @adofersan
 README.md               @adofersan
+LICENSE                 @adofersan
 
 # Dependency Management and Environment
 # Prevents unvetted packages or environment changes
