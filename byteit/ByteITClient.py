@@ -77,11 +77,21 @@ class ByteITClient:
     BASE_URL = "https://byteit.ai"
     DEFAULT_TIMEOUT = 60 * 30  # 30 minutes
 
-    def __init__(self, api_key: str):
+    def __init__(
+        self,
+        api_key: str,
+        *,
+        rate_limit_max_retries: int = 10,
+        rate_limit_base_delay: float = 1.0,
+        rate_limit_max_delay: float = 60.0,
+    ):
         """Initialize the ByteIT client.
 
         Args:
             api_key: Your ByteIT API key
+            rate_limit_max_retries: Maximum submission retries after a 429 response.
+            rate_limit_base_delay: Initial wait time (seconds) after rate limiting.
+            rate_limit_max_delay: Maximum adaptive delay (seconds) between submissions.
 
         Raises:
             APIKeyError: If API key is invalid
@@ -90,6 +100,11 @@ class ByteITClient:
             raise APIKeyError("API key must be a non-empty string")
 
         self.api_key = api_key
+        self._rate_limit_max_retries = rate_limit_max_retries
+        self._rate_limit_base_delay = rate_limit_base_delay
+        self._rate_limit_max_delay = rate_limit_max_delay
+        self._submission_delay = 0.0
+        self._last_submission_at: float | None = None
         self._session = requests.Session()
         self._session.headers.update({"X-API-Key": self.api_key})
 
@@ -611,28 +626,20 @@ class ByteITClient:
 
         # Prepare input based on type
         files: dict[str, Any] | None = None
-        file_obj = None
-
         if connector_type == "localfile":
-            filename, file_obj = input_connector.get_file_data()
-            files = {"file": (filename, file_obj)}
+            pass
         elif connector_type == "s3":
             _, connection_data = input_connector.get_file_data()
             data["input_connection_data"] = json.dumps(connection_data)
         else:
             raise ValidationError(f"Unsupported connector type: {connector_type}")
 
-        # Make request with cleanup
-        try:
-            response = self._request(
-                "POST",
-                self._build_job_collection_path(PARSE_JOBS_PATH),
-                files=files,
-                data=data,
-            )
-        finally:
-            if file_obj and hasattr(file_obj, "close") and not file_obj.closed:
-                file_obj.close()
+        response = self._submit_parse_job_request(
+            connector_type=connector_type,
+            input_connector=input_connector,
+            data=data,
+            files=files,
+        )
 
         # Return job from response
         if "job_id" in response:
@@ -797,6 +804,88 @@ class ByteITClient:
             output_connector=job.output_connector,
         )
 
+    def _submit_parse_job_request(
+        self,
+        connector_type: str,
+        input_connector: InputConnector,
+        data: dict[str, Any],
+        files: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        """Submit a parse job, retrying and spacing requests when rate limited."""
+        for attempt in range(self._rate_limit_max_retries + 1):
+            file_obj = None
+            request_files = files
+            try:
+                if connector_type == "localfile":
+                    filename, file_obj = input_connector.get_file_data()
+                    request_files = {"file": (filename, file_obj)}
+
+                self._wait_before_submission()
+                response = self._request(
+                    "POST",
+                    self._build_job_collection_path(PARSE_JOBS_PATH),
+                    files=request_files,
+                    data=data,
+                )
+                self._record_successful_submission()
+                return response
+            except RateLimitError as exc:
+                if attempt >= self._rate_limit_max_retries:
+                    raise
+                delay = self._backoff_after_rate_limit(exc)
+                print(
+                    "Rate limited. Waiting "
+                    f"{delay:.1f}s before retry "
+                    f"({attempt + 1}/{self._rate_limit_max_retries})..."
+                )
+                time.sleep(delay)
+            finally:
+                if file_obj and hasattr(file_obj, "close") and not file_obj.closed:
+                    file_obj.close()
+
+        raise RateLimitError("Rate limit exceeded after retries.", status_code=429)
+
+    def _wait_before_submission(self) -> None:
+        """Sleep when a previous rate limit requires spacing between submissions."""
+        if self._submission_delay <= 0 or self._last_submission_at is None:
+            return
+
+        elapsed = time.monotonic() - self._last_submission_at
+        wait_time = self._submission_delay - elapsed
+        if wait_time > 0:
+            time.sleep(wait_time)
+
+    def _record_successful_submission(self) -> None:
+        """Track submission timing and gradually reduce adaptive throttling."""
+        self._last_submission_at = time.monotonic()
+        if self._submission_delay > self._rate_limit_base_delay:
+            self._submission_delay = max(
+                self._rate_limit_base_delay,
+                self._submission_delay * 0.5,
+            )
+
+    def _backoff_after_rate_limit(self, error: RateLimitError) -> float:
+        """Increase spacing between submissions and return the wait duration."""
+        suggested_delay = error.retry_after_seconds or self._rate_limit_base_delay
+        if self._submission_delay <= 0:
+            self._submission_delay = min(suggested_delay, self._rate_limit_max_delay)
+        else:
+            self._submission_delay = min(
+                max(self._submission_delay * 2, suggested_delay),
+                self._rate_limit_max_delay,
+            )
+        return max(suggested_delay, self._submission_delay)
+
+    @staticmethod
+    def _parse_retry_after(value: str | None) -> float | None:
+        """Parse a Retry-After header value into seconds."""
+        if not value:
+            return None
+        try:
+            return float(value)
+        except ValueError:
+            return None
+
     def _request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
         """Make HTTP request."""
         url = self._build_url(path)
@@ -821,13 +910,21 @@ class ByteITClient:
                 response.text or f"Request failed with status {response.status_code}"
             )
 
+        if response.status_code == 429:
+            retry_after = self._parse_retry_after(response.headers.get("Retry-After"))
+            raise RateLimitError(
+                message,
+                response.status_code,
+                data,
+                retry_after_seconds=retry_after,
+            )
+
         # Map status to exception
         ERROR_MAP: dict[int, type[Exception]] = {  # noqa: N806
             400: ValidationError,
             401: AuthenticationError,
             403: APIKeyError,
             404: ResourceNotFoundError,
-            429: RateLimitError,
         }
 
         ExceptionClass = ERROR_MAP.get(response.status_code)  # noqa: N806

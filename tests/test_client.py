@@ -13,6 +13,7 @@ from byteit.exceptions import (
     APIKeyError,
     AuthenticationError,
     JobProcessingError,
+    RateLimitError,
     ResourceNotFoundError,
     ServerError,
     ValidationError,
@@ -156,6 +157,37 @@ class TestHandleResponse:
 
         with pytest.raises(ResourceNotFoundError, match="Not found"):
             client._handle_response(response)
+
+    def test_429_raises_rate_limit_error(self):
+        """429 status raises RateLimitError."""
+        client = ByteITClient("test_key")
+        response = Mock(spec=requests.Response)
+        response.status_code = 429
+        response.content = b'{"detail": "Too many requests"}'
+        response.json.return_value = {"detail": "Too many requests"}
+        response.text = "Too many requests"
+        response.headers = {}
+
+        with pytest.raises(RateLimitError, match="Too many requests") as exc_info:
+            client._handle_response(response)
+
+        assert exc_info.value.status_code == 429
+        assert exc_info.value.retry_after_seconds is None
+
+    def test_429_parses_retry_after_header(self):
+        """429 response captures Retry-After when provided."""
+        client = ByteITClient("test_key")
+        response = Mock(spec=requests.Response)
+        response.status_code = 429
+        response.content = b'{"detail": "Too many requests"}'
+        response.json.return_value = {"detail": "Too many requests"}
+        response.text = "Too many requests"
+        response.headers = {"Retry-After": "5"}
+
+        with pytest.raises(RateLimitError) as exc_info:
+            client._handle_response(response)
+
+        assert exc_info.value.retry_after_seconds == 5.0
 
     def test_500_raises_server_error(self):
         """500 status raises ServerError."""
@@ -341,6 +373,87 @@ class TestCreateJob:
 
         request_kwargs = mock_request.call_args.kwargs
         assert "queue_for_batch" not in request_kwargs["data"]
+
+
+class TestCreateJobRateLimitHandling:
+    """Test adaptive rate-limit handling during parse job submission."""
+
+    @patch("time.sleep")
+    @patch.object(ByteITClient, "_request")
+    @patch.object(ByteITClient, "_get_parse_job_details")
+    def test_create_job_retries_after_rate_limit(
+        self, mock_get_status, mock_request, mock_sleep
+    ):
+        """_create_job retries submission after a 429 and then succeeds."""
+        client = ByteITClient("test_key", rate_limit_max_retries=3)
+        mock_request.side_effect = [
+            RateLimitError("Too many requests", status_code=429, retry_after_seconds=2),
+            {"job_id": "job_123"},
+        ]
+        mock_get_status.return_value = Mock(spec=ParseJob)
+
+        connector = Mock()
+        connector.to_dict.return_value = {"type": "localfile"}
+        connector.get_file_data.return_value = ("test.pdf", Mock())
+
+        output_connector = Mock()
+        output_connector.to_dict.return_value = {"type": "localfile"}
+
+        client._create_job(connector, output_connector, OutputFormat.JSON)
+
+        assert mock_request.call_count == 2
+        mock_sleep.assert_called_once_with(2.0)
+        assert client._submission_delay == 1.0
+
+    @patch("time.sleep")
+    @patch.object(ByteITClient, "_request")
+    @patch.object(ByteITClient, "_get_parse_job_details")
+    def test_create_job_spaces_subsequent_submissions_after_rate_limit(
+        self, mock_get_status, mock_request, mock_sleep
+    ):
+        """After a rate limit, later submissions wait before sending."""
+        client = ByteITClient("test_key", rate_limit_base_delay=1.0)
+        mock_request.return_value = {"job_id": "job_123"}
+        mock_get_status.return_value = Mock(spec=ParseJob)
+
+        connector = Mock()
+        connector.to_dict.return_value = {"type": "localfile"}
+        connector.get_file_data.return_value = ("test.pdf", Mock())
+
+        output_connector = Mock()
+        output_connector.to_dict.return_value = {"type": "localfile"}
+
+        client._submission_delay = 2.0
+        client._last_submission_at = 100.0
+
+        with patch("time.monotonic", side_effect=[101.0, 102.5]):
+            client._create_job(connector, output_connector, OutputFormat.JSON)
+
+        mock_sleep.assert_called_once_with(1.0)
+
+    @patch("time.sleep")
+    @patch.object(ByteITClient, "_request")
+    def test_create_job_raises_after_max_rate_limit_retries(
+        self, mock_request, mock_sleep
+    ):
+        """_create_job raises RateLimitError after exhausting retries."""
+        client = ByteITClient("test_key", rate_limit_max_retries=2)
+        mock_request.side_effect = RateLimitError(
+            "Too many requests", status_code=429, retry_after_seconds=1
+        )
+
+        connector = Mock()
+        connector.to_dict.return_value = {"type": "localfile"}
+        connector.get_file_data.return_value = ("test.pdf", Mock())
+
+        output_connector = Mock()
+        output_connector.to_dict.return_value = {"type": "localfile"}
+
+        with pytest.raises(RateLimitError, match="Too many requests"):
+            client._create_job(connector, output_connector, OutputFormat.JSON)
+
+        assert mock_request.call_count == 3
+        assert mock_sleep.call_count == 2
 
 
 class TestJobEndpointRouting:
