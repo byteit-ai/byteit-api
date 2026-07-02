@@ -17,6 +17,7 @@ __all__ = [
     "ExtractionType",
     "ExtractJob",
     "ExtractJobList",
+    "ExtractionType",
     "JobList",
     "JobStatus",
     "OutputFormat",

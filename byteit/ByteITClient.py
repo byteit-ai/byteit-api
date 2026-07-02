@@ -126,6 +126,7 @@ class ByteITClient:
         input: str | Path | InputConnector,
         processing_options: ProcessingOptions | dict | None = None,
         output: None | str | Path = None,
+        result_format: str | OutputFormat | None = None,
     ) -> bytes:
         """Parse a document and wait for the result.
 
@@ -138,6 +139,11 @@ class ByteITClient:
             processing_options: ProcessingOptions or dict with keys:
                 ``languages`` (list[str]), ``page_range`` (str), and
                 ``extraction_type`` (str or ExtractionType).
+            result_format: Optional output format override. When omitted, the
+                backend returns the format that was requested when the job was
+                created. Supported values are ``OutputFormat.TXT``,
+                ``OutputFormat.JSON``, ``OutputFormat.MD``,
+                ``OutputFormat.HTML``, and ``OutputFormat.EXCEL``.
 
         Returns:
             Parsed content as bytes.
@@ -146,8 +152,8 @@ class ByteITClient:
 
         Example::
 
-            result = client.parse("document.pdf")
-            client.parse("doc.pdf", output="result.md")
+            result = client.parse("doc.pdf", result_format=OutputFormat.TXT,
+            output="result.txt")
         """
         job, input_connector = self._submit_job(
             input,
@@ -158,7 +164,11 @@ class ByteITClient:
         self._wait_for_completion(job.id, input_connector=input_connector, job=job)
 
         # Download result
-        result_bytes = self._download_parse_result(job.id)
+        if result_format is None:
+            result_bytes = self._download_parse_result(job.id)
+        else:
+            fmt = self._parse_output_format(result_format)
+            result_bytes = self._download_parse_result(job.id, result_format=fmt)
 
         # If output is a file path, save it
         if isinstance(output, (str, Path)):
@@ -944,7 +954,8 @@ class ByteITClient:
             {"output_format": result_format.value} if result_format is not None else {}
         )
         response = self._session.get(url, params=params, timeout=self.DEFAULT_TIMEOUT)
-        response.raise_for_status()
+        if response.status_code not in (200, 201):
+            self._handle_response(response)
 
         content_disposition = response.headers.get("Content-Disposition", "")
         content_type = response.headers.get("Content-Type", "")
@@ -1124,6 +1135,22 @@ class ByteITClient:
         response = self._session.request(method, url, **kwargs)
         return self._handle_response(response)
 
+    @staticmethod
+    def _extract_error_message(
+        data: dict[str, Any],
+        response: requests.Response,
+    ) -> str:
+        """Return a human-readable API error message from a JSON error body."""
+        for key in ("detail", "error"):
+            value = data.get(key)
+            if isinstance(value, str) and value.strip():
+                return value
+
+        if response.text:
+            return response.text
+
+        return f"Request failed with status {response.status_code}"
+
     def _handle_response(self, response: requests.Response) -> dict[str, Any]:
         """Handle API response and raise appropriate exceptions."""
         # Success path
@@ -1133,13 +1160,11 @@ class ByteITClient:
         # Error path - extract details
         try:
             data: dict[str, Any] = response.json() if response.content else {}
-            message: str = data.get("detail", "") or response.text or "Request failed"
+            message = self._extract_error_message(data, response)
         except (ValueError, requests.exceptions.JSONDecodeError):
             # Response is not JSON (e.g., HTML error page)
             data = {}
-            message = (
-                response.text or f"Request failed with status {response.status_code}"
-            )
+            message = self._extract_error_message(data, response)
 
         if response.status_code == 429:
             retry_after = self._parse_retry_after(response.headers.get("Retry-After"))

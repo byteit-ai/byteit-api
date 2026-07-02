@@ -1,0 +1,14 @@
+name: Review Guard
+
+on:
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  jira-guard:
+    name: Jira Guard
+    permissions:
+      pull-requests: read
+      contents: read
+    uses: byteit-ai/.github/.github/workflows/jira-guard.yml@main
+    secrets: inherit
