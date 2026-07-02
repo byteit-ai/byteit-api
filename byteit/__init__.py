@@ -25,6 +25,7 @@ from .exceptions import (
     ValidationError,
 )
 from .models.DocumentMetadata import DocumentMetadata
+from .models.DocumentType import DocumentType
 from .models.ExtractionType import ExtractionType
 from .models.ExtractJob import ExtractJob
 from .models.ExtractJobList import ExtractJobList
@@ -95,6 +96,7 @@ __all__ = [
     "JobList",
     "JobStatus",
     "DocumentMetadata",
+    "DocumentType",
     "ProcessingOptions",
     "ExtractionType",
     "ExtractJob",

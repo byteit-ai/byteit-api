@@ -17,7 +17,8 @@ repos:
     hooks:
       - id: release-preflight
         name: release preflight checks
-        entry: python scripts/release_preflight.py --pre-commit
+        entry: scripts/release_preflight.py
+        args: [--pre-commit]
         language: python
         additional_dependencies:
           - build>=1.0.0
@@ -29,7 +30,8 @@ repos:
 
       - id: release-commit-title
         name: release commit title check
-        entry: python scripts/release_preflight.py --commit-msg
-        language: system
+        entry: scripts/release_preflight.py
+        args: [--commit-msg]
+        language: python
         pass_filenames: true
         stages: [commit-msg]

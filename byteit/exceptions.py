@@ -72,9 +72,21 @@ class RateLimitError(ByteITError):
 
     Raised when you've exceeded your API rate limits.
     Wait before retrying or contact support to increase your limits.
+
+    Attributes:
+        retry_after_seconds: Suggested wait time from the ``Retry-After`` header,
+            when the server provides one.
     """
 
-    pass
+    def __init__(  # noqa: D107
+        self,
+        message: str,
+        status_code: int | None = None,
+        response: dict[str, Any] | None = None,
+        retry_after_seconds: float | None = None,
+    ):
+        super().__init__(message, status_code, response)
+        self.retry_after_seconds = retry_after_seconds
 
 
 class ServerError(ByteITError):

@@ -13,6 +13,7 @@ from byteit.exceptions import (
     APIKeyError,
     AuthenticationError,
     JobProcessingError,
+    RateLimitError,
     ResourceNotFoundError,
     ServerError,
     ValidationError,
@@ -156,6 +157,37 @@ class TestHandleResponse:
 
         with pytest.raises(ResourceNotFoundError, match="Not found"):
             client._handle_response(response)
+
+    def test_429_raises_rate_limit_error(self):
+        """429 status raises RateLimitError."""
+        client = ByteITClient("test_key")
+        response = Mock(spec=requests.Response)
+        response.status_code = 429
+        response.content = b'{"detail": "Too many requests"}'
+        response.json.return_value = {"detail": "Too many requests"}
+        response.text = "Too many requests"
+        response.headers = {}
+
+        with pytest.raises(RateLimitError, match="Too many requests") as exc_info:
+            client._handle_response(response)
+
+        assert exc_info.value.status_code == 429
+        assert exc_info.value.retry_after_seconds is None
+
+    def test_429_parses_retry_after_header(self):
+        """429 response captures Retry-After when provided."""
+        client = ByteITClient("test_key")
+        response = Mock(spec=requests.Response)
+        response.status_code = 429
+        response.content = b'{"detail": "Too many requests"}'
+        response.json.return_value = {"detail": "Too many requests"}
+        response.text = "Too many requests"
+        response.headers = {"Retry-After": "5"}
+
+        with pytest.raises(RateLimitError) as exc_info:
+            client._handle_response(response)
+
+        assert exc_info.value.retry_after_seconds == 5.0
 
     def test_500_raises_server_error(self):
         """500 status raises ServerError."""
@@ -338,6 +370,136 @@ class TestCreateJob:
             "POST",
             "/v1/jobs/parse-jobs/",
         )
+
+    @patch.object(ByteITClient, "_request")
+    @patch.object(ByteITClient, "_get_parse_job_details")
+    def test_create_job_sends_queue_for_batch_when_true(
+        self, mock_get_status, mock_request
+    ):
+        """Create job includes queue_for_batch when batch processing is requested."""
+        client = ByteITClient("test_key")
+        mock_request.return_value = {"job_id": "job_123"}
+        mock_get_status.return_value = Mock(spec=ParseJob)
+
+        connector = Mock()
+        connector.to_dict.return_value = {"type": "localfile"}
+        connector.get_file_data.return_value = ("test.pdf", Mock())
+
+        output_connector = Mock()
+        output_connector.to_dict.return_value = {"type": "localfile"}
+
+        client._create_job(
+            connector,
+            output_connector,
+            OutputFormat.JSON,
+            queue_for_batch=True,
+        )
+
+        request_kwargs = mock_request.call_args.kwargs
+        assert request_kwargs["data"]["queue_for_batch"] == "true"
+
+    @patch.object(ByteITClient, "_request")
+    @patch.object(ByteITClient, "_get_parse_job_details")
+    def test_create_job_omits_queue_for_batch_by_default(
+        self, mock_get_status, mock_request
+    ):
+        """Create job does not send queue_for_batch when not requested."""
+        client = ByteITClient("test_key")
+        mock_request.return_value = {"job_id": "job_123"}
+        mock_get_status.return_value = Mock(spec=ParseJob)
+
+        connector = Mock()
+        connector.to_dict.return_value = {"type": "localfile"}
+        connector.get_file_data.return_value = ("test.pdf", Mock())
+
+        output_connector = Mock()
+        output_connector.to_dict.return_value = {"type": "localfile"}
+
+        client._create_job(connector, output_connector, OutputFormat.JSON)
+
+        request_kwargs = mock_request.call_args.kwargs
+        assert "queue_for_batch" not in request_kwargs["data"]
+
+
+class TestCreateJobRateLimitHandling:
+    """Test adaptive rate-limit handling during parse job submission."""
+
+    @patch("time.sleep")
+    @patch.object(ByteITClient, "_request")
+    @patch.object(ByteITClient, "_get_parse_job_details")
+    def test_create_job_retries_after_rate_limit(
+        self, mock_get_status, mock_request, mock_sleep
+    ):
+        """_create_job retries submission after a 429 and then succeeds."""
+        client = ByteITClient("test_key", rate_limit_max_retries=3)
+        mock_request.side_effect = [
+            RateLimitError("Too many requests", status_code=429, retry_after_seconds=2),
+            {"job_id": "job_123"},
+        ]
+        mock_get_status.return_value = Mock(spec=ParseJob)
+
+        connector = Mock()
+        connector.to_dict.return_value = {"type": "localfile"}
+        connector.get_file_data.return_value = ("test.pdf", Mock())
+
+        output_connector = Mock()
+        output_connector.to_dict.return_value = {"type": "localfile"}
+
+        client._create_job(connector, output_connector, OutputFormat.JSON)
+
+        assert mock_request.call_count == 2
+        mock_sleep.assert_called_once_with(2.0)
+        assert client._submission_delay == 1.0
+
+    @patch("time.sleep")
+    @patch.object(ByteITClient, "_request")
+    @patch.object(ByteITClient, "_get_parse_job_details")
+    def test_create_job_spaces_subsequent_submissions_after_rate_limit(
+        self, mock_get_status, mock_request, mock_sleep
+    ):
+        """After a rate limit, later submissions wait before sending."""
+        client = ByteITClient("test_key", rate_limit_base_delay=1.0)
+        mock_request.return_value = {"job_id": "job_123"}
+        mock_get_status.return_value = Mock(spec=ParseJob)
+
+        connector = Mock()
+        connector.to_dict.return_value = {"type": "localfile"}
+        connector.get_file_data.return_value = ("test.pdf", Mock())
+
+        output_connector = Mock()
+        output_connector.to_dict.return_value = {"type": "localfile"}
+
+        client._submission_delay = 2.0
+        client._last_submission_at = 100.0
+
+        with patch("time.monotonic", side_effect=[101.0, 102.5]):
+            client._create_job(connector, output_connector, OutputFormat.JSON)
+
+        mock_sleep.assert_called_once_with(1.0)
+
+    @patch("time.sleep")
+    @patch.object(ByteITClient, "_request")
+    def test_create_job_raises_after_max_rate_limit_retries(
+        self, mock_request, mock_sleep
+    ):
+        """_create_job raises RateLimitError after exhausting retries."""
+        client = ByteITClient("test_key", rate_limit_max_retries=2)
+        mock_request.side_effect = RateLimitError(
+            "Too many requests", status_code=429, retry_after_seconds=1
+        )
+
+        connector = Mock()
+        connector.to_dict.return_value = {"type": "localfile"}
+        connector.get_file_data.return_value = ("test.pdf", Mock())
+
+        output_connector = Mock()
+        output_connector.to_dict.return_value = {"type": "localfile"}
+
+        with pytest.raises(RateLimitError, match="Too many requests"):
+            client._create_job(connector, output_connector, OutputFormat.JSON)
+
+        assert mock_request.call_count == 3
+        assert mock_sleep.call_count == 2
 
 
 class TestJobEndpointRouting:
@@ -574,7 +736,7 @@ class TestParseAsync:
         result = client.parse_async("test.pdf")
 
         assert result is mock_job
-        mock_submit.assert_called_once_with("test.pdf", None)
+        mock_submit.assert_called_once_with("test.pdf", None, queue_for_batch=False)
 
     @patch.object(ByteITClient, "_submit_job")
     def test_parse_async_with_options(self, mock_submit):
@@ -589,7 +751,7 @@ class TestParseAsync:
         result = client.parse_async("test.pdf", processing_options=opts)
 
         assert result is mock_job
-        mock_submit.assert_called_once_with("test.pdf", opts)
+        mock_submit.assert_called_once_with("test.pdf", opts, queue_for_batch=False)
 
     @patch.object(ByteITClient, "_submit_job")
     def test_parse_async_submits_json_by_default(self, mock_submit):
@@ -603,7 +765,21 @@ class TestParseAsync:
         result = client.parse_async("test.pdf")
 
         assert result is mock_job
-        mock_submit.assert_called_once_with("test.pdf", None)
+        mock_submit.assert_called_once_with("test.pdf", None, queue_for_batch=False)
+
+    @patch.object(ByteITClient, "_submit_job")
+    def test_parse_async_forwards_queue_for_batch(self, mock_submit):
+        """parse_async forwards queue_for_batch to job submission."""
+        client = ByteITClient("test_key")
+
+        mock_job = Mock(spec=ParseJob)
+        mock_job.id = "job_123"
+        mock_submit.return_value = (mock_job, Mock())
+
+        result = client.parse_async("test.pdf", queue_for_batch=True)
+
+        assert result is mock_job
+        mock_submit.assert_called_once_with("test.pdf", None, queue_for_batch=True)
 
     @patch.object(ByteITClient, "_submit_job")
     def test_parse_async_does_not_wait(self, mock_submit):
@@ -653,6 +829,7 @@ class TestSubmitJob:
             output_connector=mock_output_conn,
             processing_options=None,
             result_format=OutputFormat.JSON,
+            queue_for_batch=False,
         )
 
     @patch.object(ByteITClient, "_create_job")
@@ -684,6 +861,23 @@ class TestSubmitJob:
         assert call_kwargs["processing_options"].extraction_type is (
             ExtractionType.COMPLEX
         )
+
+    @patch.object(ByteITClient, "_create_job")
+    @patch.object(ByteITClient, "_to_output_connector")
+    @patch.object(ByteITClient, "_to_input_connector")
+    def test_submit_job_forwards_queue_for_batch(
+        self, mock_to_input, mock_to_output, mock_create
+    ):
+        """_submit_job forwards queue_for_batch to job creation."""
+        client = ByteITClient("test_key")
+
+        mock_to_input.return_value = Mock()
+        mock_to_output.return_value = Mock()
+        mock_create.return_value = Mock(spec=ParseJob)
+
+        client._submit_job("test.pdf", queue_for_batch=True)
+
+        assert mock_create.call_args.kwargs["queue_for_batch"] is True
 
 
 class TestContextManager:

@@ -2,6 +2,7 @@
 
 import json
 import time
+from contextlib import ExitStack
 from pathlib import Path
 from types import TracebackType
 from typing import Any
@@ -24,6 +25,7 @@ from .exceptions import (
     ServerError,
     ValidationError,
 )
+from .models.DocumentType import DocumentType
 from .models.ExtractJob import ExtractJob
 from .models.ExtractJobList import ExtractJobList
 from .models.JobList import JobList
@@ -32,6 +34,11 @@ from .models.OutputFormat import OutputFormat
 from .models.ParseJob import ParseJob
 from .models.ProcessingOptions import ProcessingOptions
 from .progress import ProgressTracker
+from .validations import (
+    MAX_FILE_SIZE_BYTES,
+    MAX_FILES_PER_REQUEST,
+    MAX_TOTAL_REQUEST_BYTES,
+)
 
 # API configuration
 API_VERSION = "v1"
@@ -77,11 +84,24 @@ class ByteITClient:
     BASE_URL = "https://byteit.ai"
     DEFAULT_TIMEOUT = 60 * 30  # 30 minutes
 
-    def __init__(self, api_key: str):
+    def __init__(
+        self,
+        api_key: str,
+        *,
+        rate_limit_max_retries: int = 10,
+        rate_limit_base_delay: float = 1.0,
+        rate_limit_max_delay: float = 60.0,
+        batch_request_delay: float = 1.0,
+    ):
         """Initialize the ByteIT client.
 
         Args:
             api_key: Your ByteIT API key
+            rate_limit_max_retries: Maximum submission retries after a 429 response.
+            rate_limit_base_delay: Initial wait time (seconds) after rate limiting.
+            rate_limit_max_delay: Maximum adaptive delay (seconds) between submissions.
+            batch_request_delay: Pause (seconds) between consecutive batch requests
+                when uploading a folder, to avoid tripping rate limits.
 
         Raises:
             APIKeyError: If API key is invalid
@@ -90,6 +110,12 @@ class ByteITClient:
             raise APIKeyError("API key must be a non-empty string")
 
         self.api_key = api_key
+        self._rate_limit_max_retries = rate_limit_max_retries
+        self._rate_limit_base_delay = rate_limit_base_delay
+        self._rate_limit_max_delay = rate_limit_max_delay
+        self._batch_request_delay = batch_request_delay
+        self._submission_delay = 0.0
+        self._last_submission_at: float | None = None
         self._session = requests.Session()
         self._session.headers.update({"X-API-Key": self.api_key})
 
@@ -129,7 +155,11 @@ class ByteITClient:
             result = client.parse("doc.pdf", result_format=OutputFormat.TXT,
             output="result.txt")
         """
-        job, input_connector = self._submit_job(input, processing_options, output=output)
+        job, input_connector = self._submit_job(
+            input,
+            processing_options,
+            output=output,
+        )
         print(f"Job {job.id} created. Waiting for completion...")
         self._wait_for_completion(job.id, input_connector=input_connector, job=job)
 
@@ -150,31 +180,65 @@ class ByteITClient:
         self,
         input: str | Path | InputConnector,
         processing_options: ProcessingOptions | dict | None = None,
-    ) -> ParseJob:
-        """Submit a document for parsing and return immediately.
+        queue_for_batch: bool = False,
+        *,
+        recursive: bool = False,
+    ) -> ParseJob | list[ParseJob]:
+        """Submit one or many documents for parsing and return immediately.
 
         Use this for non-blocking workflows. Check progress with
         :meth:`get_job_status`, inspect metadata with :meth:`get_parse_job_details`,
         and retrieve results with :meth:`get_parse_job_result`.
 
+        ``input`` may be:
+
+        * A single file path (str/Path) or an :class:`InputConnector` - and returns
+        a single :class:`ParseJob`.
+        * A path to a folder - every supported file in the folder is uploaded.
+          Files are packed into as few requests as the backend allows
+          (up to :data:`MAX_FILES_PER_REQUEST` files and
+          :data:`MAX_TOTAL_REQUEST_BYTES` per request), and requests are sent
+          one after another with a short pause in between and automatic retries
+          when rate limited. Returns a ``list[ParseJob]``.
+
         Args:
-            input: File path (str/Path) or InputConnector.
+            input: File path, folder path, or InputConnector.
             processing_options: ProcessingOptions or dict with keys:
                 ``languages`` (list[str]), ``page_range`` (str), and
                 ``extraction_type`` (str or ExtractionType).
+            queue_for_batch: When ``True``, the job is queued for batch
+                processing at a reduced credit cost. Processing is not
+                immediate.
+            recursive: When ``input`` is a folder, also include files found in
+                subdirectories. Ignored for single-file inputs.
 
         Returns:
-            ParseJob object with ``id``, ``processing_status``, and other metadata.
+            A single :class:`ParseJob` for a file/connector input, or a
+            ``list[ParseJob]`` (one per successfully submitted file) for a
+            folder input.
 
         Example::
 
+            # Single file (unchanged behaviour)
             job = client.parse_async("document.pdf")
-            # ... do other work ...
             status = client.get_job_status(job.id)
-            if status.is_completed:
-                result = client.get_parse_job_result(job.id)
+
+            # Whole folder - the library splits it into batched requests
+            jobs = client.parse_async("./invoices", recursive=True)
+            for job in jobs:
+                print(job.id, job.processing_status)
         """
-        job, _ = self._submit_job(input, processing_options)
+        if self._is_directory_input(input):
+            return self._submit_folder_async(
+                Path(input),  # type: ignore[arg-type]
+                processing_options,
+                queue_for_batch=queue_for_batch,
+                recursive=recursive,
+            )
+
+        job, _ = self._submit_job(
+            input, processing_options, queue_for_batch=queue_for_batch
+        )
         print(f"Job {job.id} submitted.")
         return job
 
@@ -411,6 +475,7 @@ class ByteITClient:
         processing_options: ProcessingOptions | dict | None = None,
         result_format: OutputFormat = OutputFormat.JSON,
         output: None | str | Path = None,
+        queue_for_batch: bool = False,
     ) -> tuple[ParseJob, InputConnector]:
         """Validate inputs, build connectors, and create a job.
 
@@ -427,8 +492,201 @@ class ByteITClient:
             output_connector=output_connector,
             processing_options=processing_options,
             result_format=result_format,
+            queue_for_batch=queue_for_batch,
         )
         return job, input_connector
+
+    # ==================== FOLDER (MULTI-FILE) SUBMISSION ====================
+
+    @staticmethod
+    def _is_directory_input(input: str | Path | InputConnector) -> bool:
+        """Return True when the input refers to an existing folder on disk."""
+        if isinstance(input, (str, Path)):
+            return Path(input).is_dir()
+        return False
+
+    def _submit_folder_async(
+        self,
+        folder: Path,
+        processing_options: ProcessingOptions | dict | None,
+        *,
+        queue_for_batch: bool,
+        recursive: bool,
+        result_format: OutputFormat = OutputFormat.JSON,
+    ) -> list[ParseJob]:
+        """Upload every supported file in a folder as batched parse jobs."""
+        if isinstance(processing_options, dict):
+            processing_options = ProcessingOptions.from_dict(processing_options)
+
+        files = self._collect_folder_files(folder, recursive=recursive)
+        if not files:
+            raise ValidationError(f"No supported files found in folder: {folder}")
+
+        batches = self._batch_files_by_limits(files)
+        data = self._build_localfile_job_data(
+            processing_options=processing_options,
+            result_format=result_format,
+            queue_for_batch=queue_for_batch,
+        )
+
+        print(
+            f"Submitting {len(files)} file(s) from '{folder}' "
+            f"in {len(batches)} request(s)..."
+        )
+
+        created_jobs: list[ParseJob] = []
+        failed_files: list[dict[str, Any]] = []
+
+        for index, batch in enumerate(batches, start=1):
+            if index > 1 and self._batch_request_delay > 0:
+                time.sleep(self._batch_request_delay)
+
+            response = self._submit_multi_file_batch(batch, data)
+            jobs, failures = self._parse_multi_file_response(response)
+            created_jobs.extend(jobs)
+            failed_files.extend(failures)
+
+            summary = f"  Request {index}/{len(batches)}: {len(jobs)} job(s) created"
+            if failures:
+                summary += f", {len(failures)} failed"
+            print(summary)
+
+        if failed_files:
+            print(f"{len(failed_files)} file(s) failed to upload:")
+            for failure in failed_files:
+                print(
+                    f"  - {failure.get('file_name', 'unknown')}: "
+                    f"{failure.get('error', 'unknown error')}"
+                )
+
+        print(f"Submitted {len(created_jobs)} job(s) from folder '{folder}'.")
+        return created_jobs
+
+    def _collect_folder_files(self, folder: Path, *, recursive: bool) -> list[Path]:
+        """Collect uploadable files from a folder, skipping unsupported ones."""
+        candidates = folder.rglob("*") if recursive else folder.iterdir()
+
+        collected: list[Path] = []
+        for path in sorted(candidates):
+            if not path.is_file():
+                continue
+
+            if not DocumentType.is_supported_extension(path.suffix):
+                print(f"Skipping unsupported file type: {path.name}")
+                continue
+
+            size = path.stat().st_size
+            if size == 0:
+                print(f"Skipping empty file: {path.name}")
+                continue
+            if size > MAX_FILE_SIZE_BYTES:
+                limit_mb = MAX_FILE_SIZE_BYTES // (1024 * 1024)
+                print(
+                    f"Skipping '{path.name}': exceeds the per-file limit of {limit_mb} MB"
+                )
+                continue
+
+            collected.append(path)
+
+        return collected
+
+    @staticmethod
+    def _batch_files_by_limits(files: list[Path]) -> list[list[Path]]:
+        """Greedily pack files into batches within the per-request limits."""
+        batches: list[list[Path]] = []
+        current: list[Path] = []
+        current_size = 0
+
+        for path in files:
+            size = path.stat().st_size
+            too_many = len(current) >= MAX_FILES_PER_REQUEST
+            too_large = bool(current) and (current_size + size > MAX_TOTAL_REQUEST_BYTES)
+            if too_many or too_large:
+                batches.append(current)
+                current = []
+                current_size = 0
+
+            current.append(path)
+            current_size += size
+
+        if current:
+            batches.append(current)
+
+        return batches
+
+    def _build_localfile_job_data(
+        self,
+        *,
+        processing_options: ProcessingOptions | None,
+        result_format: OutputFormat,
+        queue_for_batch: bool,
+    ) -> dict[str, Any]:
+        """Build the multipart form fields shared by every folder batch."""
+        output_connector = LocalFileOutputConnector()
+        output_config = output_connector.to_dict()
+
+        data: dict[str, Any] = {
+            "output_format": result_format.value,
+            "processing_options": json.dumps(
+                processing_options.to_dict() if processing_options else {}
+            ),
+            "input_connector": "localfile",
+            "output_connector": output_config.get("type", ""),
+            "output_connection_data": (
+                json.dumps(output_config) if output_config.get("type") else "{}"
+            ),
+        }
+        if queue_for_batch:
+            data["queue_for_batch"] = "true"
+        return data
+
+    def _submit_multi_file_batch(
+        self,
+        file_paths: list[Path],
+        data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Submit one multi-file request, retrying/spacing when rate limited."""
+        for attempt in range(self._rate_limit_max_retries + 1):
+            try:
+                with ExitStack() as stack:
+                    request_files = []
+                    for path in file_paths:
+                        handle = stack.enter_context(path.open("rb"))
+                        request_files.append(("files", (path.name, handle)))
+
+                    self._wait_before_submission()
+                    response = self._request(
+                        "POST",
+                        self._build_job_collection_path(PARSE_JOBS_PATH),
+                        files=request_files,
+                        data=data,
+                    )
+                self._record_successful_submission()
+                return response
+            except RateLimitError as exc:
+                if attempt >= self._rate_limit_max_retries:
+                    raise
+                delay = self._backoff_after_rate_limit(exc)
+                print(
+                    "Rate limited. Waiting "
+                    f"{delay:.1f}s before retry "
+                    f"({attempt + 1}/{self._rate_limit_max_retries})..."
+                )
+                time.sleep(delay)
+
+        raise RateLimitError("Rate limit exceeded after retries.", status_code=429)
+
+    @staticmethod
+    def _parse_multi_file_response(
+        response: dict[str, Any],
+    ) -> tuple[list[ParseJob], list[dict[str, Any]]]:
+        """Split a multi-file create response into jobs and per-file failures."""
+        raw_jobs = response.get("parse_jobs") or []
+        jobs = [ParseJob.from_dict(item) for item in raw_jobs if isinstance(item, dict)]
+        failures = [
+            f for f in (response.get("failed_files") or []) if isinstance(f, dict)
+        ]
+        return jobs, failures
 
     # ==================== EXTRACTION INTERNAL METHODS ====================
 
@@ -581,6 +839,7 @@ class ByteITClient:
         output_connector: OutputConnector,
         result_format: OutputFormat,
         processing_options: ProcessingOptions | None = None,
+        queue_for_batch: bool = False,
     ) -> ParseJob:
         """Create a processing job."""
         connector_type = (
@@ -603,30 +862,25 @@ class ByteITClient:
             json.dumps(output_config) if output_config.get("type") else "{}"
         )
 
+        if queue_for_batch:
+            data["queue_for_batch"] = "true"
+
         # Prepare input based on type
         files: dict[str, Any] | None = None
-        file_obj = None
-
         if connector_type == "localfile":
-            filename, file_obj = input_connector.get_file_data()
-            files = {"file": (filename, file_obj)}
+            pass
         elif connector_type == "s3":
             _, connection_data = input_connector.get_file_data()
             data["input_connection_data"] = json.dumps(connection_data)
         else:
             raise ValidationError(f"Unsupported connector type: {connector_type}")
 
-        # Make request with cleanup
-        try:
-            response = self._request(
-                "POST",
-                self._build_job_collection_path(PARSE_JOBS_PATH),
-                files=files,
-                data=data,
-            )
-        finally:
-            if file_obj and hasattr(file_obj, "close") and not file_obj.closed:
-                file_obj.close()
+        response = self._submit_parse_job_request(
+            connector_type=connector_type,
+            input_connector=input_connector,
+            data=data,
+            files=files,
+        )
 
         # Return job from response
         if "job_id" in response:
@@ -792,6 +1046,88 @@ class ByteITClient:
             output_connector=job.output_connector,
         )
 
+    def _submit_parse_job_request(
+        self,
+        connector_type: str,
+        input_connector: InputConnector,
+        data: dict[str, Any],
+        files: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        """Submit a parse job, retrying and spacing requests when rate limited."""
+        for attempt in range(self._rate_limit_max_retries + 1):
+            file_obj = None
+            request_files = files
+            try:
+                if connector_type == "localfile":
+                    filename, file_obj = input_connector.get_file_data()
+                    request_files = {"file": (filename, file_obj)}
+
+                self._wait_before_submission()
+                response = self._request(
+                    "POST",
+                    self._build_job_collection_path(PARSE_JOBS_PATH),
+                    files=request_files,
+                    data=data,
+                )
+                self._record_successful_submission()
+                return response
+            except RateLimitError as exc:
+                if attempt >= self._rate_limit_max_retries:
+                    raise
+                delay = self._backoff_after_rate_limit(exc)
+                print(
+                    "Rate limited. Waiting "
+                    f"{delay:.1f}s before retry "
+                    f"({attempt + 1}/{self._rate_limit_max_retries})..."
+                )
+                time.sleep(delay)
+            finally:
+                if file_obj and hasattr(file_obj, "close") and not file_obj.closed:
+                    file_obj.close()
+
+        raise RateLimitError("Rate limit exceeded after retries.", status_code=429)
+
+    def _wait_before_submission(self) -> None:
+        """Sleep when a previous rate limit requires spacing between submissions."""
+        if self._submission_delay <= 0 or self._last_submission_at is None:
+            return
+
+        elapsed = time.monotonic() - self._last_submission_at
+        wait_time = self._submission_delay - elapsed
+        if wait_time > 0:
+            time.sleep(wait_time)
+
+    def _record_successful_submission(self) -> None:
+        """Track submission timing and gradually reduce adaptive throttling."""
+        self._last_submission_at = time.monotonic()
+        if self._submission_delay > self._rate_limit_base_delay:
+            self._submission_delay = max(
+                self._rate_limit_base_delay,
+                self._submission_delay * 0.5,
+            )
+
+    def _backoff_after_rate_limit(self, error: RateLimitError) -> float:
+        """Increase spacing between submissions and return the wait duration."""
+        suggested_delay = error.retry_after_seconds or self._rate_limit_base_delay
+        if self._submission_delay <= 0:
+            self._submission_delay = min(suggested_delay, self._rate_limit_max_delay)
+        else:
+            self._submission_delay = min(
+                max(self._submission_delay * 2, suggested_delay),
+                self._rate_limit_max_delay,
+            )
+        return max(suggested_delay, self._submission_delay)
+
+    @staticmethod
+    def _parse_retry_after(value: str | None) -> float | None:
+        """Parse a Retry-After header value into seconds."""
+        if not value:
+            return None
+        try:
+            return float(value)
+        except ValueError:
+            return None
+
     def _request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
         """Make HTTP request."""
         url = self._build_url(path)
@@ -830,13 +1166,21 @@ class ByteITClient:
             data = {}
             message = self._extract_error_message(data, response)
 
+        if response.status_code == 429:
+            retry_after = self._parse_retry_after(response.headers.get("Retry-After"))
+            raise RateLimitError(
+                message,
+                response.status_code,
+                data,
+                retry_after_seconds=retry_after,
+            )
+
         # Map status to exception
         ERROR_MAP: dict[int, type[Exception]] = {  # noqa: N806
             400: ValidationError,
             401: AuthenticationError,
             403: APIKeyError,
             404: ResourceNotFoundError,
-            429: RateLimitError,
         }
 
         ExceptionClass = ERROR_MAP.get(response.status_code)  # noqa: N806

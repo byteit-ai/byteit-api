@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Optional `queue_for_batch` parameter on `parse_async()` for lower-cost batch
+  processing (non-immediate).
+- Automatic rate-limit handling for parse job submission: retries on 429 responses
+  and adds adaptive delays between subsequent submissions when limits are hit.
 
 ## [1.1.2] - 2026-06-08
 - Improved error handling for downloading result
