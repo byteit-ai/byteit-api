@@ -13,6 +13,12 @@ VALID_PROCESSING_OPTIONS: set[str] = {
     "extraction_type",
 }
 
+# Multi-file upload limits. Mirror the backend
+# ``src/application/docflow/multi_file_upload_limits.py``.
+MAX_FILES_PER_REQUEST = 25
+MAX_FILE_SIZE_BYTES = 200 * 1024 * 1024  # 200 MB per file
+MAX_TOTAL_REQUEST_BYTES = 250 * 1024 * 1024  # 250 MB per request
+
 
 def validate_processing_options(options: dict[str, Any]) -> None:
     """Validate processing options dictionary.

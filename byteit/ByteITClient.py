@@ -2,6 +2,7 @@
 
 import json
 import time
+from contextlib import ExitStack
 from pathlib import Path
 from types import TracebackType
 from typing import Any
@@ -24,6 +25,7 @@ from .exceptions import (
     ServerError,
     ValidationError,
 )
+from .models.DocumentType import DocumentType
 from .models.ExtractJob import ExtractJob
 from .models.ExtractJobList import ExtractJobList
 from .models.JobList import JobList
@@ -32,6 +34,11 @@ from .models.OutputFormat import OutputFormat
 from .models.ParseJob import ParseJob
 from .models.ProcessingOptions import ProcessingOptions
 from .progress import ProgressTracker
+from .validations import (
+    MAX_FILE_SIZE_BYTES,
+    MAX_FILES_PER_REQUEST,
+    MAX_TOTAL_REQUEST_BYTES,
+)
 
 # API configuration
 API_VERSION = "v1"
@@ -84,6 +91,7 @@ class ByteITClient:
         rate_limit_max_retries: int = 10,
         rate_limit_base_delay: float = 1.0,
         rate_limit_max_delay: float = 60.0,
+        batch_request_delay: float = 1.0,
     ):
         """Initialize the ByteIT client.
 
@@ -92,6 +100,8 @@ class ByteITClient:
             rate_limit_max_retries: Maximum submission retries after a 429 response.
             rate_limit_base_delay: Initial wait time (seconds) after rate limiting.
             rate_limit_max_delay: Maximum adaptive delay (seconds) between submissions.
+            batch_request_delay: Pause (seconds) between consecutive batch requests
+                when uploading a folder, to avoid tripping rate limits.
 
         Raises:
             APIKeyError: If API key is invalid
@@ -103,6 +113,7 @@ class ByteITClient:
         self._rate_limit_max_retries = rate_limit_max_retries
         self._rate_limit_base_delay = rate_limit_base_delay
         self._rate_limit_max_delay = rate_limit_max_delay
+        self._batch_request_delay = batch_request_delay
         self._submission_delay = 0.0
         self._last_submission_at: float | None = None
         self._session = requests.Session()
@@ -160,33 +171,61 @@ class ByteITClient:
         input: str | Path | InputConnector,
         processing_options: ProcessingOptions | dict | None = None,
         queue_for_batch: bool = False,
-    ) -> ParseJob:
-        """Submit a document for parsing and return immediately.
+        *,
+        recursive: bool = False,
+    ) -> ParseJob | list[ParseJob]:
+        """Submit one or many documents for parsing and return immediately.
 
         Use this for non-blocking workflows. Check progress with
         :meth:`get_job_status`, inspect metadata with :meth:`get_parse_job_details`,
         and retrieve results with :meth:`get_parse_job_result`.
 
+        ``input`` may be:
+
+        * A single file path (str/Path) or an :class:`InputConnector` - and returns
+        a single :class:`ParseJob`.
+        * A path to a folder - every supported file in the folder is uploaded.
+          Files are packed into as few requests as the backend allows
+          (up to :data:`MAX_FILES_PER_REQUEST` files and
+          :data:`MAX_TOTAL_REQUEST_BYTES` per request), and requests are sent
+          one after another with a short pause in between and automatic retries
+          when rate limited. Returns a ``list[ParseJob]``.
+
         Args:
-            input: File path (str/Path) or InputConnector.
+            input: File path, folder path, or InputConnector.
             processing_options: ProcessingOptions or dict with keys:
                 ``languages`` (list[str]), ``page_range`` (str), and
                 ``extraction_type`` (str or ExtractionType).
             queue_for_batch: When ``True``, the job is queued for batch
                 processing at a reduced credit cost. Processing is not
                 immediate.
+            recursive: When ``input`` is a folder, also include files found in
+                subdirectories. Ignored for single-file inputs.
 
         Returns:
-            ParseJob object with ``id``, ``processing_status``, and other metadata.
+            A single :class:`ParseJob` for a file/connector input, or a
+            ``list[ParseJob]`` (one per successfully submitted file) for a
+            folder input.
 
         Example::
 
+            # Single file (unchanged behaviour)
             job = client.parse_async("document.pdf")
-            # ... do other work ...
             status = client.get_job_status(job.id)
-            if status.is_completed:
-                result = client.get_parse_job_result(job.id)
+
+            # Whole folder - the library splits it into batched requests
+            jobs = client.parse_async("./invoices", recursive=True)
+            for job in jobs:
+                print(job.id, job.processing_status)
         """
+        if self._is_directory_input(input):
+            return self._submit_folder_async(
+                Path(input),  # type: ignore[arg-type]
+                processing_options,
+                queue_for_batch=queue_for_batch,
+                recursive=recursive,
+            )
+
         job, _ = self._submit_job(
             input, processing_options, queue_for_batch=queue_for_batch
         )
@@ -446,6 +485,198 @@ class ByteITClient:
             queue_for_batch=queue_for_batch,
         )
         return job, input_connector
+
+    # ==================== FOLDER (MULTI-FILE) SUBMISSION ====================
+
+    @staticmethod
+    def _is_directory_input(input: str | Path | InputConnector) -> bool:
+        """Return True when the input refers to an existing folder on disk."""
+        if isinstance(input, (str, Path)):
+            return Path(input).is_dir()
+        return False
+
+    def _submit_folder_async(
+        self,
+        folder: Path,
+        processing_options: ProcessingOptions | dict | None,
+        *,
+        queue_for_batch: bool,
+        recursive: bool,
+        result_format: OutputFormat = OutputFormat.JSON,
+    ) -> list[ParseJob]:
+        """Upload every supported file in a folder as batched parse jobs."""
+        if isinstance(processing_options, dict):
+            processing_options = ProcessingOptions.from_dict(processing_options)
+
+        files = self._collect_folder_files(folder, recursive=recursive)
+        if not files:
+            raise ValidationError(f"No supported files found in folder: {folder}")
+
+        batches = self._batch_files_by_limits(files)
+        data = self._build_localfile_job_data(
+            processing_options=processing_options,
+            result_format=result_format,
+            queue_for_batch=queue_for_batch,
+        )
+
+        print(
+            f"Submitting {len(files)} file(s) from '{folder}' "
+            f"in {len(batches)} request(s)..."
+        )
+
+        created_jobs: list[ParseJob] = []
+        failed_files: list[dict[str, Any]] = []
+
+        for index, batch in enumerate(batches, start=1):
+            if index > 1 and self._batch_request_delay > 0:
+                time.sleep(self._batch_request_delay)
+
+            response = self._submit_multi_file_batch(batch, data)
+            jobs, failures = self._parse_multi_file_response(response)
+            created_jobs.extend(jobs)
+            failed_files.extend(failures)
+
+            summary = f"  Request {index}/{len(batches)}: {len(jobs)} job(s) created"
+            if failures:
+                summary += f", {len(failures)} failed"
+            print(summary)
+
+        if failed_files:
+            print(f"{len(failed_files)} file(s) failed to upload:")
+            for failure in failed_files:
+                print(
+                    f"  - {failure.get('file_name', 'unknown')}: "
+                    f"{failure.get('error', 'unknown error')}"
+                )
+
+        print(f"Submitted {len(created_jobs)} job(s) from folder '{folder}'.")
+        return created_jobs
+
+    def _collect_folder_files(self, folder: Path, *, recursive: bool) -> list[Path]:
+        """Collect uploadable files from a folder, skipping unsupported ones."""
+        candidates = folder.rglob("*") if recursive else folder.iterdir()
+
+        collected: list[Path] = []
+        for path in sorted(candidates):
+            if not path.is_file():
+                continue
+
+            if not DocumentType.is_supported_extension(path.suffix):
+                print(f"Skipping unsupported file type: {path.name}")
+                continue
+
+            size = path.stat().st_size
+            if size == 0:
+                print(f"Skipping empty file: {path.name}")
+                continue
+            if size > MAX_FILE_SIZE_BYTES:
+                limit_mb = MAX_FILE_SIZE_BYTES // (1024 * 1024)
+                print(
+                    f"Skipping '{path.name}': exceeds the per-file limit of {limit_mb} MB"
+                )
+                continue
+
+            collected.append(path)
+
+        return collected
+
+    @staticmethod
+    def _batch_files_by_limits(files: list[Path]) -> list[list[Path]]:
+        """Greedily pack files into batches within the per-request limits."""
+        batches: list[list[Path]] = []
+        current: list[Path] = []
+        current_size = 0
+
+        for path in files:
+            size = path.stat().st_size
+            too_many = len(current) >= MAX_FILES_PER_REQUEST
+            too_large = bool(current) and (current_size + size > MAX_TOTAL_REQUEST_BYTES)
+            if too_many or too_large:
+                batches.append(current)
+                current = []
+                current_size = 0
+
+            current.append(path)
+            current_size += size
+
+        if current:
+            batches.append(current)
+
+        return batches
+
+    def _build_localfile_job_data(
+        self,
+        *,
+        processing_options: ProcessingOptions | None,
+        result_format: OutputFormat,
+        queue_for_batch: bool,
+    ) -> dict[str, Any]:
+        """Build the multipart form fields shared by every folder batch."""
+        output_connector = LocalFileOutputConnector()
+        output_config = output_connector.to_dict()
+
+        data: dict[str, Any] = {
+            "output_format": result_format.value,
+            "processing_options": json.dumps(
+                processing_options.to_dict() if processing_options else {}
+            ),
+            "input_connector": "localfile",
+            "output_connector": output_config.get("type", ""),
+            "output_connection_data": (
+                json.dumps(output_config) if output_config.get("type") else "{}"
+            ),
+        }
+        if queue_for_batch:
+            data["queue_for_batch"] = "true"
+        return data
+
+    def _submit_multi_file_batch(
+        self,
+        file_paths: list[Path],
+        data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Submit one multi-file request, retrying/spacing when rate limited."""
+        for attempt in range(self._rate_limit_max_retries + 1):
+            try:
+                with ExitStack() as stack:
+                    request_files = []
+                    for path in file_paths:
+                        handle = stack.enter_context(path.open("rb"))
+                        request_files.append(("files", (path.name, handle)))
+
+                    self._wait_before_submission()
+                    response = self._request(
+                        "POST",
+                        self._build_job_collection_path(PARSE_JOBS_PATH),
+                        files=request_files,
+                        data=data,
+                    )
+                self._record_successful_submission()
+                return response
+            except RateLimitError as exc:
+                if attempt >= self._rate_limit_max_retries:
+                    raise
+                delay = self._backoff_after_rate_limit(exc)
+                print(
+                    "Rate limited. Waiting "
+                    f"{delay:.1f}s before retry "
+                    f"({attempt + 1}/{self._rate_limit_max_retries})..."
+                )
+                time.sleep(delay)
+
+        raise RateLimitError("Rate limit exceeded after retries.", status_code=429)
+
+    @staticmethod
+    def _parse_multi_file_response(
+        response: dict[str, Any],
+    ) -> tuple[list[ParseJob], list[dict[str, Any]]]:
+        """Split a multi-file create response into jobs and per-file failures."""
+        raw_jobs = response.get("parse_jobs") or []
+        jobs = [ParseJob.from_dict(item) for item in raw_jobs if isinstance(item, dict)]
+        failures = [
+            f for f in (response.get("failed_files") or []) if isinstance(f, dict)
+        ]
+        return jobs, failures
 
     # ==================== EXTRACTION INTERNAL METHODS ====================
 
