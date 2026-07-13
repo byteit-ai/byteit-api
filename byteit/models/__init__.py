@@ -1,5 +1,7 @@
 """ByteIT domain models."""
 
+from .CustomJob import CustomJob
+from .CustomJobList import CustomJobList
 from .DocumentMetadata import DocumentMetadata
 from .ExtractionType import ExtractionType
 from .ExtractJob import ExtractJob
@@ -11,6 +13,8 @@ from .ParseJob import ParseJob
 from .ProcessingOptions import ProcessingOptions
 
 __all__ = [
+    "CustomJob",
+    "CustomJobList",
     "DocumentMetadata",
     "ExtractJob",
     "ExtractJobList",
