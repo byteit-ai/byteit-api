@@ -2,6 +2,7 @@
 
 import json
 import time
+from datetime import datetime
 from pathlib import Path
 from types import TracebackType
 from typing import Any
@@ -24,6 +25,8 @@ from .exceptions import (
     ServerError,
     ValidationError,
 )
+from .models.CustomJob import CustomJob
+from .models.CustomJobList import CustomJobList
 from .models.ExtractJob import ExtractJob
 from .models.ExtractJobList import ExtractJobList
 from .models.JobList import JobList
@@ -39,6 +42,7 @@ API_BASE = f"/{API_VERSION}"
 JOBS_PATH = "jobs"
 PARSE_JOBS_PATH = "parse-jobs"
 EXTRACT_JOBS_PATH = "extract-jobs"
+CUSTOM_JOBS_PATH = "custom-jobs"
 
 
 class ByteITClient:
@@ -56,6 +60,10 @@ class ByteITClient:
         get_extract_jobs():               List all extract jobs for your account.
         get_extract_job_details(job_id):  Get the full extract-job resource.
         get_extract_job_result(job_id):   Download the result of a completed extraction.
+        custom_job(input, ...):           Submit documents for a custom job and wait.
+        custom_job_async(input, ...):     Submit a custom job and return immediately.
+        get_custom_jobs(before=None):     List custom jobs for your account.
+        get_custom_job_result(job_id):    Download the result of a completed custom job.
 
     Examples:
         Synchronous (blocking)::
@@ -407,6 +415,149 @@ class ByteITClient:
         """
         return self._download_extract_result(job_id)
 
+    # ==================== CUSTOM JOB PUBLIC API ====================
+
+    def custom_job(
+        self,
+        input: str | Path | InputConnector | list[str | Path | InputConnector],
+        schema: type | dict[str, Any] | None = None,
+        user_prompt: str | None = None,
+        nickname: str | None = None,
+        output: None | str | Path = None,
+    ) -> dict[str, Any] | str:
+        """Submit documents for a custom job and wait for the result.
+
+        Uploads one or more documents with an optional schema and user prompt,
+        polls until processing completes, and returns the result.
+        For non-blocking usage, see :meth:`custom_job_async`.
+
+        When a schema is provided the result is returned as a dictionary.
+        Without a schema the result is returned as a string (for example
+        markdown or plain text produced by the model).
+
+        Args:
+            input: Single file path (str/Path), InputConnector, or a list of
+                those values for multi-document jobs.
+            schema: Optional subclass of
+                :class:`~byteit.models.ExtractionSchema.ExtractionSchema`
+                or a raw JSON schema dict defining fields to extract.
+            user_prompt: Optional prompt appended to the custom job request.
+            nickname: Optional label for easier job identification.
+            output: Optional file path to save the result to disk.
+
+        Returns:
+            Parsed JSON as a dictionary when the result is JSON, otherwise
+            the raw result text.
+
+        Example::
+
+            result = client.custom_job(
+                ["invoice1.pdf"],
+                schema={"invoice_number": "string"},
+                user_prompt="Focus on the billing section.",
+                nickname="March invoices",
+            )
+        """
+        job = self._create_custom_job(input, schema, user_prompt, nickname)
+        print(f"Custom job {job.id} created. Waiting for completion...")
+        self._wait_for_custom_job_completion(job.id, job)
+
+        result_bytes = self._download_custom_job_result(job.id)
+        result = self._parse_custom_job_result(result_bytes)
+
+        if isinstance(output, (str, Path)):
+            if isinstance(result, dict):
+                Path(output).write_text(
+                    json.dumps(result, indent=2, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+            else:
+                Path(output).write_text(result, encoding="utf-8")
+
+        return result
+
+    def custom_job_async(
+        self,
+        input: str | Path | InputConnector | list[str | Path | InputConnector],
+        schema: type | dict[str, Any] | None = None,
+        user_prompt: str | None = None,
+        nickname: str | None = None,
+    ) -> CustomJob:
+        """Submit a custom job and return immediately.
+
+        Use this for non-blocking workflows. Check progress with
+        :meth:`get_job_status`, and retrieve results with
+        :meth:`get_custom_job_result`.
+
+        Args:
+            input: Single file path (str/Path), InputConnector, or a list of
+                those values for multi-document jobs.
+            schema: Optional subclass of
+                :class:`~byteit.models.ExtractionSchema.ExtractionSchema`
+                or a raw JSON schema dict defining fields to extract.
+            user_prompt: Optional prompt appended to the custom job request.
+            nickname: Optional label for easier job identification.
+
+        Returns:
+            CustomJob object with ``id`` and ``processing_status``.
+
+        Example::
+
+            job = client.custom_job_async(
+                "document.pdf",
+                schema=InvoiceSchema,
+                user_prompt="Extract only the totals.",
+            )
+            status = client.get_job_status(job.id)
+            if status.is_completed:
+                result = client.get_custom_job_result(job.id)
+        """
+        job = self._create_custom_job(input, schema, user_prompt, nickname)
+        print(f"Custom job {job.id} submitted.")
+        return job
+
+    def get_custom_jobs(
+        self,
+        before: str | datetime | None = None,
+    ) -> CustomJobList:
+        """List custom jobs for your account.
+
+        Args:
+            before: Optional ISO 8601 datetime cursor for pagination. Returns
+                custom jobs created before this time.
+
+        Returns:
+            CustomJobList with collection metadata and custom jobs.
+
+        Example::
+
+            job_list = client.get_custom_jobs()
+            for job in job_list.jobs:
+                print(f"{job.id}: {job.processing_status}")
+        """
+        return self._list_custom_jobs(before=before)
+
+    def get_custom_job_result(self, job_id: str) -> dict[str, Any] | str:
+        """Download the result of a completed custom job.
+
+        The result can only be retrieved once within 30 seconds of completion.
+
+        Args:
+            job_id: The custom job ID.
+
+        Returns:
+            Parsed JSON as a dictionary when the result is JSON, otherwise
+            the raw result text.
+
+        Raises:
+            JobProcessingError: If the job has not completed yet.
+
+        Example::
+
+            result = client.get_custom_job_result("job_123")
+        """
+        return self._parse_custom_job_result(self._download_custom_job_result(job_id))
+
     # ==================== JOB SUBMISSION ====================
 
     def _submit_job(
@@ -532,6 +683,172 @@ class ByteITClient:
             return json_schema_fn()
 
         raise ValidationError("schema must be a dict or an ExtractionSchema subclass.")
+
+    # ==================== CUSTOM JOB INTERNAL METHODS ====================
+
+    def _normalize_custom_job_inputs(
+        self,
+        input: str | Path | InputConnector | list[str | Path | InputConnector],
+    ) -> list[str | Path | InputConnector]:
+        """Normalize custom-job file inputs to a non-empty list."""
+        if isinstance(input, (str, Path, InputConnector)):
+            return [input]
+
+        if isinstance(input, list):
+            if not input:
+                raise ValidationError("At least one input file is required.")
+            return input
+
+        raise ValidationError(
+            f"Unsupported custom job input type: {type(input).__name__}"
+        )
+
+    def _create_custom_job(
+        self,
+        input: str | Path | InputConnector | list[str | Path | InputConnector],
+        schema: type | dict[str, Any] | None = None,
+        user_prompt: str | None = None,
+        nickname: str | None = None,
+    ) -> CustomJob:
+        """Submit a new custom job with one or more uploaded files."""
+        inputs = self._normalize_custom_job_inputs(input)
+        multipart_files: list[tuple[str, tuple[str, Any]]] = []
+        file_handles: list[Any] = []
+        data: dict[str, Any] = {}
+
+        if schema is not None:
+            data["schema"] = json.dumps(self._build_schema_dict(schema))
+        if user_prompt:
+            data["user_prompt"] = user_prompt
+        if nickname:
+            data["nickname"] = nickname
+
+        try:
+            for file_input in inputs:
+                input_connector = self._to_input_connector(file_input)
+                connector_type = (
+                    input_connector.to_dict().get("type", "localfile").strip().lower()
+                )
+                if connector_type != "localfile":
+                    raise ValidationError(
+                        "Custom jobs currently only support local file uploads."
+                    )
+
+                filename, file_obj = input_connector.get_file_data()
+                file_handles.append(file_obj)
+                multipart_files.append(("files", (filename, file_obj)))
+
+            response = self._request(
+                "POST",
+                self._build_job_collection_path(CUSTOM_JOBS_PATH),
+                files=multipart_files,
+                data=data,
+            )
+        finally:
+            for file_obj in file_handles:
+                if file_obj and hasattr(file_obj, "close") and not file_obj.closed:
+                    file_obj.close()
+
+        job_data = self._extract_job_data(response, primary_key="custom_job")
+        return CustomJob.from_dict(job_data)
+
+    def _list_custom_jobs(
+        self,
+        before: str | datetime | None = None,
+    ) -> CustomJobList:
+        """List custom jobs with optional cursor pagination."""
+        params: dict[str, str] = {}
+        if before is not None:
+            if isinstance(before, datetime):
+                params["before"] = before.isoformat()
+            else:
+                params["before"] = before
+
+        response = self._request(
+            "GET",
+            self._build_job_collection_path(CUSTOM_JOBS_PATH),
+            params=params or None,
+        )
+        return CustomJobList.from_dict(response)
+
+    def _download_custom_job_result(self, job_id: str) -> bytes:
+        """Download the raw result bytes of a completed custom job."""
+        url = self._build_url(self._build_job_result_path(job_id, CUSTOM_JOBS_PATH))
+        response = self._session.get(url, timeout=self.DEFAULT_TIMEOUT)
+        if response.status_code not in (200, 201):
+            self._handle_response(response)
+
+        content_disposition = response.headers.get("Content-Disposition", "")
+        content_type = response.headers.get("Content-Type", "")
+
+        if "attachment" in content_disposition:
+            if not response.content:
+                raise JobProcessingError("Custom job result is empty")
+            return response.content
+
+        if "application/json" in content_type:
+            data = self._handle_response(response)
+            if not data.get("ready", True):
+                status = data.get("processing_status", "unknown")
+                raise JobProcessingError(f"Result not available. Job status: {status}")
+            raise JobProcessingError("Job ready but no result file returned")
+
+        if not response.content:
+            raise JobProcessingError("Custom job result is empty")
+        return response.content
+
+    @staticmethod
+    def _parse_custom_job_result(content: bytes) -> dict[str, Any] | str:
+        """Parse custom job result bytes into a dict or raw text."""
+        if not content:
+            raise JobProcessingError("Custom job result is empty")
+
+        try:
+            parsed = json.loads(content)
+        except json.JSONDecodeError:
+            return content.decode("utf-8")
+
+        if isinstance(parsed, dict):
+            return parsed
+        return content.decode("utf-8")
+
+    def _wait_for_custom_job_completion(
+        self,
+        job_id: str,
+        job: CustomJob,
+    ) -> CustomJob:
+        """Wait for a custom job to complete with adaptive polling."""
+        iteration = 1
+        job_snapshot = job
+
+        while True:
+            status = self._get_job_status(job_id)
+            job_snapshot = CustomJob(
+                id=job_snapshot.id,
+                processing_status=status.processing_status,
+                nickname=job_snapshot.nickname,
+                created_at=job_snapshot.created_at,
+                updated_at=job_snapshot.updated_at,
+                processing_time_seconds=job_snapshot.processing_time_seconds,
+                credits_cost=job_snapshot.credits_cost,
+                extraction_schema=job_snapshot.extraction_schema,
+                user_prompt=job_snapshot.user_prompt,
+                file_names=job_snapshot.file_names,
+                total_page_count=job_snapshot.total_page_count,
+                document_types=job_snapshot.document_types,
+            )
+
+            if status.is_completed:
+                return job_snapshot
+
+            if status.is_failed:
+                raise JobProcessingError(
+                    f"Custom job failed: {status.message or 'Unknown error'}"
+                )
+
+            poll_interval = min(1 * (1.5 ** (iteration - 1)), 10)
+            time.sleep(poll_interval)
+            iteration += 1
 
     # ==================== CONNECTOR CONVERTERS ====================
 

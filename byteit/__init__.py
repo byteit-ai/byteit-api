@@ -24,6 +24,8 @@ from .exceptions import (
     ServerError,
     ValidationError,
 )
+from .models.CustomJob import CustomJob
+from .models.CustomJobList import CustomJobList
 from .models.DocumentMetadata import DocumentMetadata
 from .models.ExtractionType import ExtractionType
 from .models.ExtractJob import ExtractJob
@@ -94,6 +96,8 @@ __all__ = [
     "ByteITClient",
     "JobList",
     "JobStatus",
+    "CustomJob",
+    "CustomJobList",
     "DocumentMetadata",
     "ProcessingOptions",
     "ExtractionType",
