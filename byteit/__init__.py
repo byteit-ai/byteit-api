@@ -35,6 +35,8 @@ from .models.JobStatus import JobStatus
 from .models.OutputFormat import OutputFormat
 from .models.ParseJob import ParseJob
 from .models.ProcessingOptions import ProcessingOptions
+from .models.SavedSchema import SavedSchema
+from .models.SavedSchemaList import SavedSchemaList
 from .validations import validate_processing_options
 
 try:
@@ -109,6 +111,8 @@ __all__ = [
     "OutputConnector",
     "LocalFileInputConnector",
     "LocalFileOutputConnector",
+    "SavedSchema",
+    "SavedSchemaList",
     "validate_processing_options",
     "ByteITError",
     "AuthenticationError",

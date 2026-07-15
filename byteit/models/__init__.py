@@ -11,6 +11,8 @@ from .JobStatus import JobStatus
 from .OutputFormat import OutputFormat
 from .ParseJob import ParseJob
 from .ProcessingOptions import ProcessingOptions
+from .SavedSchema import SavedSchema
+from .SavedSchemaList import SavedSchemaList
 
 __all__ = [
     "CustomJob",
@@ -24,4 +26,6 @@ __all__ = [
     "OutputFormat",
     "ParseJob",
     "ProcessingOptions",
+    "SavedSchema",
+    "SavedSchemaList",
 ]
