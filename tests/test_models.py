@@ -186,6 +186,15 @@ class TestProcessingOptions:
 
         assert options.extraction_type is ExtractionType.COMPLEX
 
+    def test_force_image_annotations_enables_image_annotations(self):
+        """force_image_annotations implies image_annotations."""
+        options = ProcessingOptions(force_image_annotations=True)
+
+        assert options.force_image_annotations is True
+        assert options.image_annotations is True
+        assert options.to_dict()["force_image_annotations"] is True
+        assert options.to_dict()["image_annotations"] is True
+
     def test_invalid_extraction_type_raises_error(self):
         """Invalid extraction type values are rejected."""
         with pytest.raises(ValueError, match="Invalid extraction type"):

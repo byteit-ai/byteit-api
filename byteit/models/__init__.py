@@ -1,5 +1,7 @@
 """ByteIT domain models."""
 
+from .CustomJob import CustomJob
+from .CustomJobList import CustomJobList
 from .DocumentMetadata import DocumentMetadata
 from .ExtractionType import ExtractionType
 from .ExtractJob import ExtractJob
@@ -13,6 +15,8 @@ from .SavedSchema import SavedSchema
 from .SavedSchemaList import SavedSchemaList
 
 __all__ = [
+    "CustomJob",
+    "CustomJobList",
     "DocumentMetadata",
     "ExtractJob",
     "ExtractJobList",

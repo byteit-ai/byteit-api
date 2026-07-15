@@ -844,7 +844,21 @@ class TestBuildSchemaDict:
         assert result["type"] == "object"
         assert "invoice_number" in result["properties"]
         assert "total_amount" in result["properties"]
-        # 'title' keys are pruned by ExtractionSchema.build_api_schema
+        # Model-level 'title' metadata is pruned by build_api_schema
+        assert "title" not in result
+
+    def test_extraction_schema_preserves_title_field_names(self):
+        """Fields named 'title' under properties are not pruned."""
+
+        class _CustomFieldSchema(ExtractionSchema):
+            title: str | None = None
+            value: str | None = None
+
+        result = _CustomFieldSchema.build_api_schema()
+
+        assert "title" in result["properties"]
+        assert "value" in result["properties"]
+        assert "title" not in result["properties"]["title"]
         assert "title" not in result
 
     def test_plain_pydantic_model_falls_back_to_model_json_schema(self):

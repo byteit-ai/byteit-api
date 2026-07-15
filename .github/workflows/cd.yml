@@ -1,26 +1,30 @@
-name: Publish to PyPI
-
-on:
-  pull_request:
-    branches:
-      - main
-    types:
-      - closed
+name: CD
 
 permissions:
   contents: write
 
+on:
+  push:
+    branches: [main]
+
 jobs:
+  jira-guard:
+    name: Jira Guard
+    permissions:
+      pull-requests: read
+      contents: read
+    uses: byteit-ai/.github/.github/workflows/jira-guard.yml@main
+    secrets: inherit
+
   validate-release:
+    if: github.event_name == 'push'
     name: Validate release metadata
-    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.merge_commit_sha }}
           fetch-depth: 0
 
       - name: Set up Python
@@ -155,7 +159,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -176,16 +180,16 @@ jobs:
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
         run: twine upload dist/*
 
-      - name: "📋 Summary"
+      - name: "Summary"
         run: |
           {
-            echo "## 📦 PyPI — Published"
+            echo "## PyPI — Published"
             echo ""
             echo "| Field | Value |"
             echo "|-------|-------|"
-            echo "| Version | \`${{ steps.tag.outputs.version }}\` |"
-            echo "| Tag | \`${{ github.ref_name }}\` |"
-            echo "| Status | ✅ Published to PyPI |"
+            echo "| Version | \`${{ needs.validate-release.outputs.version }}\` |"
+            echo "| Tag | \`${{ needs.validate-release.outputs.tag }}\` |"
+            echo "| Status | Published to PyPI |"
           } >> "$GITHUB_STEP_SUMMARY"
 
   notify-failure:
