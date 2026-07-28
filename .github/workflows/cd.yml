@@ -30,7 +30,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.8"
+          python-version: "3.12"
 
       - name: Detect release commit
         id: release_meta
@@ -48,7 +48,7 @@ jobs:
             echo "should_publish=false" >> "$GITHUB_OUTPUT"
             echo "version=" >> "$GITHUB_OUTPUT"
             echo "tag=" >> "$GITHUB_OUTPUT"
-            echo "Not a release commit. Workflow will exit cleanly without publishing."
+            echo "Not a release commit. Workflow will exit without publishing."
           fi
 
       - name: Ensure merge commit is on main
@@ -60,71 +60,15 @@ jobs:
             exit 1
           }
 
-      - name: Validate release commit message
+      - name: Install dependencies
         if: steps.release_meta.outputs.should_publish == 'true'
         run: |
-          COMMIT_MSG=$(git log -1 --pretty=%s)
-          echo "Commit message: $COMMIT_MSG"
+          python -m pip install --upgrade pip
+          python -m pip install build twine ruff
 
-          if ! echo "$COMMIT_MSG" | grep -Eq '^chore\(release\): [0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "Invalid release commit message"
-            exit 1
-          fi
-
-          MSG_VERSION=$(echo "$COMMIT_MSG" | sed -E 's/^chore\(release\): ([0-9]+\.[0-9]+\.[0-9]+)$/\1/')
-          if [ "$MSG_VERSION" != "${{ steps.release_meta.outputs.version }}" ]; then
-            echo "Commit version does not match release version"
-            exit 1
-          fi
-
-      - name: Validate pyproject.toml version matches tag
+      - name: Run release validation
         if: steps.release_meta.outputs.should_publish == 'true'
-        run: |
-          FILE_VERSION=$(grep -E '^version\s*=\s*"[0-9]+\.[0-9]+\.[0-9]+"' pyproject.toml \
-            | sed -E 's/.*"([0-9]+\.[0-9]+\.[0-9]+)"/\1/')
-
-          if [ "$FILE_VERSION" != "${{ steps.release_meta.outputs.version }}" ]; then
-            echo "pyproject.toml version does not match tag"
-            exit 1
-          fi
-
-      - name: Validate CHANGELOG entry exists
-        if: steps.release_meta.outputs.should_publish == 'true'
-        run: |
-          if ! grep -q "\[${{ steps.release_meta.outputs.version }}\]" CHANGELOG.md; then
-            echo "CHANGELOG missing version section"
-            exit 1
-          fi
-
-      - name: Validate semver bump against previous release tag
-        if: steps.release_meta.outputs.should_publish == 'true'
-        run: |
-          git fetch --tags origin
-
-          CURRENT="${{ steps.release_meta.outputs.version }}"
-          PREV_TAG=$(git tag -l 'v*' --sort=-v:refname | grep -v "^v${CURRENT}$" | head -n 1 || true)
-
-          if [ -z "$PREV_TAG" ]; then
-            echo "No previous release tag found. Skipping bump-shape validation."
-            exit 0
-          fi
-
-          PREV="${PREV_TAG#v}"
-
-          IFS='.' read -r PREV_X PREV_Y PREV_Z <<< "$PREV"
-          IFS='.' read -r CURR_X CURR_Y CURR_Z <<< "$CURRENT"
-
-          if [ "$CURR_X" -eq $((PREV_X + 1)) ] && [ "$CURR_Y" -eq 0 ] && [ "$CURR_Z" -eq 0 ]; then
-            echo "Valid major bump from $PREV to $CURRENT"
-          elif [ "$CURR_X" -eq "$PREV_X" ] && [ "$CURR_Y" -eq $((PREV_Y + 1)) ] && [ "$CURR_Z" -eq 0 ]; then
-            echo "Valid minor bump from $PREV to $CURRENT"
-          elif [ "$CURR_X" -eq "$PREV_X" ] && [ "$CURR_Y" -eq "$PREV_Y" ] && [ "$CURR_Z" -eq $((PREV_Z + 1)) ]; then
-            echo "Valid patch bump from $PREV to $CURRENT"
-          else
-            echo "Invalid semver bump from previous release: $PREV -> $CURRENT"
-            echo "Expected exactly one valid bump: major (+1.0.0), minor (+0.1.0 with patch reset), or patch (+0.0.1)."
-            exit 1
-          fi
+        run: python scripts/release_preflight.py --ci
 
       - name: Create or validate release tag
         if: steps.release_meta.outputs.should_publish == 'true'
@@ -164,7 +108,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.8"
+          python-version: "3.12"
 
       - name: Install build tools
         run: |
@@ -180,7 +124,7 @@ jobs:
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
         run: twine upload dist/*
 
-      - name: "Summary"
+      - name: Summary
         run: |
           {
             echo "## PyPI — Published"
@@ -194,7 +138,7 @@ jobs:
 
   notify-failure:
     name: AdolfoBOT — Notify Failure
-    needs: [validate, publish]
+    needs: [validate-release, publish]
     if: failure()
     uses: byteit-ai/.github/.github/workflows/adolfobot.yml@main
     with:

@@ -3,6 +3,7 @@
 from .CustomJob import CustomJob
 from .CustomJobList import CustomJobList
 from .DocumentMetadata import DocumentMetadata
+from .DocumentType import DocumentType
 from .ExtractionType import ExtractionType
 from .ExtractJob import ExtractJob
 from .ExtractJobList import ExtractJobList
@@ -18,8 +19,10 @@ __all__ = [
     "CustomJob",
     "CustomJobList",
     "DocumentMetadata",
+    "DocumentType",
     "ExtractJob",
     "ExtractJobList",
+    "ExtractionType",
     "ExtractionType",
     "JobList",
     "JobStatus",

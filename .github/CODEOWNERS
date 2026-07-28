@@ -4,7 +4,7 @@
 # Unauthorized changes here could bypass security checks or break deployments
 .github/workflows/      @adofersan
 .github/CODEOWNERS      @adofersan
-scripts/ci/             @adofersan
+scripts/                @adofersan
 
 # Linting, Formatting, and Quality Gates
 # Controls Ruff, pre-commit, and general project standards

@@ -27,6 +27,7 @@ from .exceptions import (
 from .models.CustomJob import CustomJob
 from .models.CustomJobList import CustomJobList
 from .models.DocumentMetadata import DocumentMetadata
+from .models.DocumentType import DocumentType
 from .models.ExtractionType import ExtractionType
 from .models.ExtractJob import ExtractJob
 from .models.ExtractJobList import ExtractJobList
@@ -48,7 +49,7 @@ except ImportError:
 try:
     __version__ = version("byteit")
 except PackageNotFoundError:
-    __version__ = "1.1.2"  # fallback, keep in sync with pyproject.toml
+    __version__ = "1.2.0"  # fallback, keep in sync with pyproject.toml
 
 try:
     from .models.ExtractionSchema import ExtractionSchema  # noqa: F401
@@ -101,6 +102,7 @@ __all__ = [
     "CustomJob",
     "CustomJobList",
     "DocumentMetadata",
+    "DocumentType",
     "ProcessingOptions",
     "ExtractionType",
     "ExtractJob",

@@ -85,6 +85,11 @@ class TestRateLimitError:
         error = RateLimitError("Too many requests")
         assert isinstance(error, ByteITError)
 
+    def test_rate_limit_error_with_retry_after(self):
+        """RateLimitError stores Retry-After when provided."""
+        error = RateLimitError("Too many requests", retry_after_seconds=5.0)
+        assert error.retry_after_seconds == 5.0
+
 
 class TestServerError:
     """Test ServerError."""

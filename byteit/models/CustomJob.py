@@ -1,4 +1,4 @@
-"""Data model for ByteIT custom LLM jobs."""
+"""Data model for ByteIT custom jobs."""
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -7,7 +7,7 @@ from typing import Any
 
 @dataclass
 class CustomJob:
-    """Custom LLM processing job.
+    """Custom processing job.
 
     Represents a custom job in the ByteIT system, where one or more documents
     are processed with a plan-specific model using an optional schema and prompt.
@@ -68,12 +68,7 @@ class CustomJob:
             raise KeyError("Custom job response is missing required field: id")
 
         file_names = data.get("file_names")
-        if file_names is not None and not isinstance(file_names, list):
-            file_names = list(file_names)
-
         document_types = data.get("document_types")
-        if document_types is not None and not isinstance(document_types, list):
-            document_types = list(document_types)
 
         return cls(
             id=job_id,
