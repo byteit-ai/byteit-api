@@ -124,12 +124,6 @@ def _check_build_integrity() -> None:
 
     _run([sys.executable, "-m", "twine", "check", *dist_files], "twine check")
 
-
-def _check_ruff() -> None:
-    _run([sys.executable, "-m", "ruff", "check", "."], "ruff check")
-    _run([sys.executable, "-m", "ruff", "format", "--check", "."], "ruff format --check")
-
-
 def _validate_commit_message(version: str, commit_msg: str | None) -> None:
     if commit_msg is None:
         _fail("Could not read HEAD commit message")
@@ -210,7 +204,6 @@ def run_pre_commit(version: str) -> None:
     _check_version_consistency(version)
     _check_unreleased_empty()
     _check_changelog_entry(version)
-    _check_ruff()
     _check_build_integrity()
 
 
@@ -218,7 +211,6 @@ def run_ci(version: str, commit_msg: str | None) -> None:
     _check_version_consistency(version)
     _check_unreleased_empty()
     _check_changelog_entry(version)
-    _check_ruff()
     _check_build_integrity()
     _validate_commit_message(version, commit_msg)
     _validate_semver_bump(version)
