@@ -7,11 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-07-28
+
 ### Added
-- Optional `queue_for_batch` parameter on `parse_async()` for lower-cost batch
-  processing (non-immediate).
-- Automatic rate-limit handling for parse job submission: retries on 429 responses
-  and adds adaptive delays between subsequent submissions when limits are hit.
+- Custom LLM processing jobs: `custom_job()`, `custom_job_async()`,
+  `get_custom_jobs()`, `get_custom_job_result()` and `CustomJob`, `CustomJobList`
+  models.
+- Saved schema management: `save_schema()`, `get_schemas()`, `delete_schema()`
+  and `SavedSchema`, `SavedSchemaList` models.
+- `parse_async()` now accepts a list of file paths (`list[str | Path]`) for
+  multi-file batch submission with automatic packing and per-file failure
+  reporting.
+- `force_image_annotations` option on `ProcessingOptions`.
+- `batch_request_delay` parameter on `ByteITClient` to pace consecutive uploads.
+- `DocumentType` model with `is_supported_extension()` for file-type filtering.
+- Internal modules extracted: `_http.py` (HTTP helpers), `_polling.py` (shared
+  adaptive polling), `_rate_limit.py` (rate-limited submitter with backoff).
+- CI: standalone `pytest-unit.yml` workflow; AdolfoBOT failure notification on
+  publish.
+- HTTP API examples in `docs/api-curl-typescript-examples.md`.
+
+### Changed
+- CI/CD workflows consolidated to call `scripts/release_preflight.py --ci` for
+  all validation, removing inline release checks.
+- Release preflight script refactored with shared helpers and clearer error
+  messages.
+- Rate-limit handling and polling logic extracted from `ByteITClient` into
+  dedicated modules.
+
+### Fixed
+- `RateLimitError` now carries `retry_after_seconds` attribute from response
+  headers.
+
+### Removed
+- `queue_for_batch` parameter from synchronous `parse()` (was async-only).
+- Inline release validation logic from CI/CD workflows.
+- Stale test file `rate_limit_test/run_batch_async_test.py`.
 
 ## [1.1.2] - 2026-07-08
 - Fixed pruning of title fields in byteit schemas
