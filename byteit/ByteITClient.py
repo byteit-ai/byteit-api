@@ -3,9 +3,11 @@
 import json
 import time
 from contextlib import ExitStack
+from datetime import datetime
 from pathlib import Path
 from types import TracebackType
 from typing import Any
+from urllib.parse import quote
 
 import requests
 
@@ -26,6 +28,8 @@ from .exceptions import (
     ValidationError,
 )
 from .models.DocumentType import DocumentType
+from .models.CustomJob import CustomJob
+from .models.CustomJobList import CustomJobList
 from .models.ExtractJob import ExtractJob
 from .models.ExtractJobList import ExtractJobList
 from .models.JobList import JobList
@@ -33,6 +37,8 @@ from .models.JobStatus import JobStatus
 from .models.OutputFormat import OutputFormat
 from .models.ParseJob import ParseJob
 from .models.ProcessingOptions import ProcessingOptions
+from .models.SavedSchema import SavedSchema
+from .models.SavedSchemaList import SavedSchemaList
 from .progress import ProgressTracker
 from .validations import (
     MAX_FILE_SIZE_BYTES,
@@ -46,6 +52,8 @@ API_BASE = f"/{API_VERSION}"
 JOBS_PATH = "jobs"
 PARSE_JOBS_PATH = "parse-jobs"
 EXTRACT_JOBS_PATH = "extract-jobs"
+SCHEMAS_PATH = "schemas"
+CUSTOM_JOBS_PATH = "custom-jobs"
 
 
 class ByteITClient:
@@ -63,6 +71,14 @@ class ByteITClient:
         get_extract_jobs():               List all extract jobs for your account.
         get_extract_job_details(job_id):  Get the full extract-job resource.
         get_extract_job_result(job_id):   Download the result of a completed extraction.
+        save_schema(name, schema):        Save a reusable extraction schema.
+        get_saved_schemas():              List saved schemas for your account.
+        get_saved_schema(name):           Retrieve one saved schema by name.
+        delete_saved_schema(name):        Delete one saved schema by name.
+        custom_job(input, ...):           Submit documents for a custom job and wait.
+        custom_job_async(input, ...):     Submit a custom job and return immediately.
+        get_custom_jobs(before=None):     List custom jobs for your account.
+        get_custom_job_result(job_id):    Download the result of a completed custom job.
 
     Examples:
         Synchronous (blocking)::
@@ -126,7 +142,7 @@ class ByteITClient:
         input: str | Path | InputConnector,
         processing_options: ProcessingOptions | dict | None = None,
         output: None | str | Path = None,
-        result_format: str | OutputFormat | None = None,
+        output_format: str | OutputFormat | None = None,
     ) -> bytes:
         """Parse a document and wait for the result.
 
@@ -139,7 +155,9 @@ class ByteITClient:
             processing_options: ProcessingOptions or dict with keys:
                 ``languages`` (list[str]), ``page_range`` (str), and
                 ``extraction_type`` (str or ExtractionType).
-            result_format: Optional output format override. When omitted, the
+                ``image_annotations`` (bool), ``force_image_annotations`` (bool),
+                ``table_enrichment`` (bool)
+            output_format: Optional output format override. When omitted, the
                 backend returns the format that was requested when the job was
                 created. Supported values are ``OutputFormat.TXT``,
                 ``OutputFormat.JSON``, ``OutputFormat.MD``,
@@ -152,8 +170,9 @@ class ByteITClient:
 
         Example::
 
-            result = client.parse("doc.pdf", result_format=OutputFormat.TXT,
-            output="result.txt")
+            result = client.parse("document.pdf")
+            client.parse("doc.pdf", output="result.md")
+            client.parse("doc.pdf", output_format=OutputFormat.TXT)
         """
         job, input_connector = self._submit_job(
             input,
@@ -164,11 +183,12 @@ class ByteITClient:
         self._wait_for_completion(job.id, input_connector=input_connector, job=job)
 
         # Download result
-        if result_format is None:
-            result_bytes = self._download_parse_result(job.id)
-        else:
-            fmt = self._parse_output_format(result_format)
-            result_bytes = self._download_parse_result(job.id, result_format=fmt)
+        fmt = (
+            self._parse_output_format(output_format)
+            if output_format is not None
+            else None
+        )
+        result_bytes = self._download_parse_result(job.id, result_format=fmt)
 
         # If output is a file path, save it
         if isinstance(output, (str, Path)):
@@ -330,7 +350,7 @@ class ByteITClient:
     def extract(
         self,
         parse_job_id: str,
-        schema: type | dict[str, Any],
+        schema: type | dict[str, Any] | SavedSchema,
         output: None | str | Path = None,
         extraction_complexity: str = "medium",
     ) -> dict[str, Any]:
@@ -343,9 +363,14 @@ class ByteITClient:
         Args:
             parse_job_id: ID of a completed
                 :class:`~byteit.models.ParseJob.ParseJob` to extract from.
-            schema: A subclass of
-                :class:`~byteit.models.ExtractionSchema.ExtractionSchema`
-                or a raw JSON schema dict defining the fields to extract.
+            schema: Extraction schema defining the fields to extract. Accepts
+                a subclass of
+                :class:`~byteit.models.ExtractionSchema.ExtractionSchema`,
+                a raw JSON schema dict, or a
+                :class:`~byteit.models.SavedSchema.SavedSchema` instance
+                (for example, from :meth:`get_saved_schema`). For saved
+                schemas, the ``schema_json`` field is sent to the API via
+                :meth:`~byteit.models.SavedSchema.SavedSchema.build_api_schema`.
             output: Optional file path to save the JSON result to disk.
             extraction_complexity: Complexity tier for the extraction.
                 One of ``"low"``, ``"medium"``, or ``"high"``.
@@ -383,7 +408,7 @@ class ByteITClient:
     def extract_async(
         self,
         parse_job_id: str,
-        schema: type | dict[str, Any],
+        schema: type | dict[str, Any] | SavedSchema,
         extraction_complexity: str = "medium",
     ) -> ExtractJob:
         """Submit a structured field extraction job and return immediately.
@@ -395,9 +420,14 @@ class ByteITClient:
         Args:
             parse_job_id: ID of a completed
                 :class:`~byteit.models.ParseJob.ParseJob` to extract from.
-            schema: A subclass of
-                :class:`~byteit.models.ExtractionSchema.ExtractionSchema`
-                or a raw JSON schema dict defining the fields to extract.
+            schema: Extraction schema defining the fields to extract. Accepts
+                a subclass of
+                :class:`~byteit.models.ExtractionSchema.ExtractionSchema`,
+                a raw JSON schema dict, or a
+                :class:`~byteit.models.SavedSchema.SavedSchema` instance
+                (for example, from :meth:`get_saved_schema`). For saved
+                schemas, the ``schema_json`` field is sent to the API via
+                :meth:`~byteit.models.SavedSchema.SavedSchema.build_api_schema`.
             extraction_complexity: Complexity tier for the extraction.
                 One of ``"low"``, ``"medium"``, or ``"high"``.
                 Defaults to ``"medium"``.
@@ -467,13 +497,252 @@ class ByteITClient:
         """
         return self._download_extract_result(job_id)
 
+    # ==================== SAVED SCHEMA PUBLIC API ====================
+
+    def save_schema(
+        self,
+        name: str,
+        schema: type | dict[str, Any] | SavedSchema,
+    ) -> SavedSchema:
+        """Save a reusable extraction schema for the authenticated user.
+
+        Args:
+            name: Human-readable schema name.
+            schema: A subclass of
+                :class:`~byteit.models.ExtractionSchema.ExtractionSchema`,
+                a raw JSON schema dict, or a
+                :class:`~byteit.models.SavedSchema.SavedSchema` instance.
+                The payload persisted as ``schema_json`` is taken from the
+                dict directly, from ``build_api_schema()`` on schema classes,
+                or from
+                :meth:`~byteit.models.SavedSchema.SavedSchema.build_api_schema`
+                when re-saving an existing saved schema.
+
+        Returns:
+            SavedSchema object with the persisted name and schema payload.
+
+        Example::
+
+            saved_schema = client.save_schema("invoice", InvoiceSchema)
+            print(saved_schema.name)
+        """
+        normalized_name = self._normalize_schema_name(name)
+        schema_dict = self._build_schema_dict(schema)
+
+        try:
+            return self._create_saved_schema(
+                name=normalized_name, schema_json=schema_dict
+            )
+        except ValidationError as exc:
+            if not self._is_duplicate_saved_schema_error(exc):
+                raise
+
+            existing_schema = self._get_saved_schema(normalized_name)
+            if existing_schema.schema_json == schema_dict:
+                return existing_schema
+
+            raise ValidationError(
+                f"Schema '{normalized_name}' already exists with different content. "
+                "Load it with get_saved_schema() or delete it before saving a "
+                "new definition.",
+                exc.status_code,
+                exc.response,
+            ) from exc
+
+    def get_saved_schemas(self) -> SavedSchemaList:
+        """List all saved schemas for the authenticated user.
+
+        Returns:
+            SavedSchemaList containing the saved schemas and list metadata.
+
+        Example::
+
+            saved_schemas = client.get_saved_schemas()
+            for saved_schema in saved_schemas.schemas:
+                print(saved_schema.name)
+        """
+        return self._list_saved_schemas()
+
+    def get_saved_schema(self, name: str) -> SavedSchema:
+        """Retrieve a saved schema by name.
+
+        Args:
+            name: Saved schema name.
+
+        Returns:
+            SavedSchema object.
+
+        Example::
+
+            saved_schema = client.get_saved_schema("invoice")
+            print(saved_schema.schema_json)
+        """
+        return self._get_saved_schema(name=name)
+
+    def delete_saved_schema(self, name: str) -> bool:
+        """Delete a saved schema by name.
+
+        Args:
+            name: Saved schema name.
+
+        Returns:
+            True when the schema was deleted.
+
+        Example::
+
+            client.delete_saved_schema("invoice")
+        """
+        return self._delete_saved_schema(name=name)
+
+    # ==================== CUSTOM JOB PUBLIC API ====================
+
+    def custom_job(
+        self,
+        input: str | Path | InputConnector | list[str | Path | InputConnector],
+        schema: type | dict[str, Any] | None = None,
+        user_prompt: str | None = None,
+        nickname: str | None = None,
+        output: None | str | Path = None,
+    ) -> dict[str, Any] | str:
+        """Submit documents for a custom job and wait for the result.
+
+        Uploads one or more documents with an optional schema and user prompt,
+        polls until processing completes, and returns the result.
+        For non-blocking usage, see :meth:`custom_job_async`.
+
+        When a schema is provided the result is returned as a dictionary.
+        Without a schema the result is returned as a string (for example
+        markdown or plain text produced by the model).
+
+        Args:
+            input: Single file path (str/Path), InputConnector, or a list of
+                those values for multi-document jobs.
+            schema: Optional subclass of
+                :class:`~byteit.models.ExtractionSchema.ExtractionSchema`
+                or a raw JSON schema dict defining fields to extract.
+            user_prompt: Optional prompt appended to the custom job request.
+            nickname: Optional label for easier job identification.
+            output: Optional file path to save the result to disk.
+
+        Returns:
+            Parsed JSON as a dictionary when the result is JSON, otherwise
+            the raw result text.
+
+        Example::
+
+            result = client.custom_job(
+                ["invoice1.pdf"],
+                schema={"invoice_number": "string"},
+                user_prompt="Focus on the billing section.",
+                nickname="March invoices",
+            )
+        """
+        job = self._create_custom_job(input, schema, user_prompt, nickname)
+        print(f"Custom job {job.id} created. Waiting for completion...")
+        self._wait_for_custom_job_completion(job.id, job)
+
+        result_bytes = self._download_custom_job_result(job.id)
+        result = self._parse_custom_job_result(result_bytes)
+
+        if isinstance(output, (str, Path)):
+            if isinstance(result, dict):
+                Path(output).write_text(
+                    json.dumps(result, indent=2, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+            else:
+                Path(output).write_text(result, encoding="utf-8")
+
+        return result
+
+    def custom_job_async(
+        self,
+        input: str | Path | InputConnector | list[str | Path | InputConnector],
+        schema: type | dict[str, Any] | None = None,
+        user_prompt: str | None = None,
+        nickname: str | None = None,
+    ) -> CustomJob:
+        """Submit a custom job and return immediately.
+
+        Use this for non-blocking workflows. Check progress with
+        :meth:`get_job_status`, and retrieve results with
+        :meth:`get_custom_job_result`.
+
+        Args:
+            input: Single file path (str/Path), InputConnector, or a list of
+                those values for multi-document jobs.
+            schema: Optional subclass of
+                :class:`~byteit.models.ExtractionSchema.ExtractionSchema`
+                or a raw JSON schema dict defining fields to extract.
+            user_prompt: Optional prompt appended to the custom job request.
+            nickname: Optional label for easier job identification.
+
+        Returns:
+            CustomJob object with ``id`` and ``processing_status``.
+
+        Example::
+
+            job = client.custom_job_async(
+                "document.pdf",
+                schema=InvoiceSchema,
+                user_prompt="Extract only the totals.",
+            )
+            status = client.get_job_status(job.id)
+            if status.is_completed:
+                result = client.get_custom_job_result(job.id)
+        """
+        job = self._create_custom_job(input, schema, user_prompt, nickname)
+        print(f"Custom job {job.id} submitted.")
+        return job
+
+    def get_custom_jobs(
+        self,
+        before: str | datetime | None = None,
+    ) -> CustomJobList:
+        """List custom jobs for your account.
+
+        Args:
+            before: Optional ISO 8601 datetime cursor for pagination. Returns
+                custom jobs created before this time.
+
+        Returns:
+            CustomJobList with collection metadata and custom jobs.
+
+        Example::
+
+            job_list = client.get_custom_jobs()
+            for job in job_list.jobs:
+                print(f"{job.id}: {job.processing_status}")
+        """
+        return self._list_custom_jobs(before=before)
+
+    def get_custom_job_result(self, job_id: str) -> dict[str, Any] | str:
+        """Download the result of a completed custom job.
+
+        The result can only be retrieved once within 30 seconds of completion.
+
+        Args:
+            job_id: The custom job ID.
+
+        Returns:
+            Parsed JSON as a dictionary when the result is JSON, otherwise
+            the raw result text.
+
+        Raises:
+            JobProcessingError: If the job has not completed yet.
+
+        Example::
+
+            result = client.get_custom_job_result("job_123")
+        """
+        return self._parse_custom_job_result(self._download_custom_job_result(job_id))
+
     # ==================== JOB SUBMISSION ====================
 
     def _submit_job(
         self,
         input: str | Path | InputConnector,
         processing_options: ProcessingOptions | dict | None = None,
-        result_format: OutputFormat = OutputFormat.JSON,
         output: None | str | Path = None,
         queue_for_batch: bool = False,
     ) -> tuple[ParseJob, InputConnector]:
@@ -491,7 +760,6 @@ class ByteITClient:
             input_connector=input_connector,
             output_connector=output_connector,
             processing_options=processing_options,
-            result_format=result_format,
             queue_for_batch=queue_for_batch,
         )
         return job, input_connector
@@ -693,7 +961,7 @@ class ByteITClient:
     def _create_extract_job(
         self,
         parse_job_id: str,
-        schema: type | dict[str, Any],
+        schema: type | dict[str, Any] | SavedSchema,
         extraction_complexity: str = "medium",
     ) -> ExtractJob:
         """Submit a new extraction job for an existing parse job."""
@@ -770,8 +1038,19 @@ class ByteITClient:
             time.sleep(poll_interval)
             iteration += 1
 
-    def _build_schema_dict(self, schema: type | dict[str, Any]) -> dict[str, Any]:
-        """Convert a schema class or raw dict to a JSON schema payload."""
+    def _build_schema_dict(
+        self,
+        schema: type | dict[str, Any] | SavedSchema,
+    ) -> dict[str, Any]:
+        """Convert a schema input to a JSON schema payload for the API.
+
+        Accepts a raw dict (returned as-is), an
+        :class:`~byteit.models.ExtractionSchema.ExtractionSchema` subclass,
+        a plain Pydantic model, or a
+        :class:`~byteit.models.SavedSchema.SavedSchema` instance. Saved
+        schemas and ExtractionSchema subclasses expose ``build_api_schema()``;
+        for saved schemas this returns a copy of ``schema_json``.
+        """
         if isinstance(schema, dict):
             return schema
 
@@ -785,7 +1064,203 @@ class ByteITClient:
         if callable(json_schema_fn):
             return json_schema_fn()
 
-        raise ValidationError("schema must be a dict or an ExtractionSchema subclass.")
+        raise ValidationError(
+            "schema must be a dict or an object exposing build_api_schema()."
+        )
+
+    def _create_saved_schema(
+        self,
+        name: str,
+        schema_json: dict[str, Any],
+    ) -> SavedSchema:
+        """Persist a pre-built saved schema for the authenticated user."""
+        response = self._request(
+            "POST",
+            self._build_schema_collection_path(),
+            json={"name": name, "schema_json": schema_json},
+        )
+        return SavedSchema.from_dict(response)
+
+    def _list_saved_schemas(self) -> SavedSchemaList:
+        """List all saved schemas for the authenticated user."""
+        response = self._request("GET", self._build_schema_collection_path())
+        return SavedSchemaList.from_dict(response)
+
+    def _get_saved_schema(self, name: str) -> SavedSchema:
+        """Retrieve a saved schema by name."""
+        response = self._request("GET", self._build_schema_resource_path(name))
+        return SavedSchema.from_dict(response)
+
+    def _delete_saved_schema(self, name: str) -> bool:
+        """Delete a saved schema by name."""
+        self._request("DELETE", self._build_schema_resource_path(name))
+        return True
+
+    # ==================== CUSTOM JOB INTERNAL METHODS ====================
+
+    def _normalize_custom_job_inputs(
+        self,
+        input: str | Path | InputConnector | list[str | Path | InputConnector],
+    ) -> list[str | Path | InputConnector]:
+        """Normalize custom-job file inputs to a non-empty list."""
+        if isinstance(input, (str, Path, InputConnector)):
+            return [input]
+
+        if isinstance(input, list):
+            if not input:
+                raise ValidationError("At least one input file is required.")
+            return input
+
+        raise ValidationError(
+            f"Unsupported custom job input type: {type(input).__name__}"
+        )
+
+    def _create_custom_job(
+        self,
+        input: str | Path | InputConnector | list[str | Path | InputConnector],
+        schema: type | dict[str, Any] | None = None,
+        user_prompt: str | None = None,
+        nickname: str | None = None,
+    ) -> CustomJob:
+        """Submit a new custom job with one or more uploaded files."""
+        inputs = self._normalize_custom_job_inputs(input)
+        multipart_files: list[tuple[str, tuple[str, Any]]] = []
+        file_handles: list[Any] = []
+        data: dict[str, Any] = {}
+
+        if schema is not None:
+            data["schema"] = json.dumps(self._build_schema_dict(schema))
+        if user_prompt:
+            data["user_prompt"] = user_prompt
+        if nickname:
+            data["nickname"] = nickname
+
+        try:
+            for file_input in inputs:
+                input_connector = self._to_input_connector(file_input)
+                connector_type = (
+                    input_connector.to_dict().get("type", "localfile").strip().lower()
+                )
+                if connector_type != "localfile":
+                    raise ValidationError(
+                        "Custom jobs currently only support local file uploads."
+                    )
+
+                filename, file_obj = input_connector.get_file_data()
+                file_handles.append(file_obj)
+                multipart_files.append(("files", (filename, file_obj)))
+
+            response = self._request(
+                "POST",
+                self._build_job_collection_path(CUSTOM_JOBS_PATH),
+                files=multipart_files,
+                data=data,
+            )
+        finally:
+            for file_obj in file_handles:
+                if file_obj and hasattr(file_obj, "close") and not file_obj.closed:
+                    file_obj.close()
+
+        job_data = self._extract_job_data(response, primary_key="custom_job")
+        return CustomJob.from_dict(job_data)
+
+    def _list_custom_jobs(
+        self,
+        before: str | datetime | None = None,
+    ) -> CustomJobList:
+        """List custom jobs with optional cursor pagination."""
+        params: dict[str, str] = {}
+        if before is not None:
+            if isinstance(before, datetime):
+                params["before"] = before.isoformat()
+            else:
+                params["before"] = before
+
+        response = self._request(
+            "GET",
+            self._build_job_collection_path(CUSTOM_JOBS_PATH),
+            params=params or None,
+        )
+        return CustomJobList.from_dict(response)
+
+    def _download_custom_job_result(self, job_id: str) -> bytes:
+        """Download the raw result bytes of a completed custom job."""
+        url = self._build_url(self._build_job_result_path(job_id, CUSTOM_JOBS_PATH))
+        response = self._session.get(url, timeout=self.DEFAULT_TIMEOUT)
+        if response.status_code not in (200, 201):
+            self._handle_response(response)
+
+        content_disposition = response.headers.get("Content-Disposition", "")
+        content_type = response.headers.get("Content-Type", "")
+
+        if "attachment" in content_disposition:
+            if not response.content:
+                raise JobProcessingError("Custom job result is empty")
+            return response.content
+
+        if "application/json" in content_type:
+            data = self._handle_response(response)
+            if not data.get("ready", True):
+                status = data.get("processing_status", "unknown")
+                raise JobProcessingError(f"Result not available. Job status: {status}")
+            raise JobProcessingError("Job ready but no result file returned")
+
+        if not response.content:
+            raise JobProcessingError("Custom job result is empty")
+        return response.content
+
+    @staticmethod
+    def _parse_custom_job_result(content: bytes) -> dict[str, Any] | str:
+        """Parse custom job result bytes into a dict or raw text."""
+        if not content:
+            raise JobProcessingError("Custom job result is empty")
+
+        try:
+            parsed = json.loads(content)
+        except json.JSONDecodeError:
+            return content.decode("utf-8")
+
+        if isinstance(parsed, dict):
+            return parsed
+        return content.decode("utf-8")
+
+    def _wait_for_custom_job_completion(
+        self,
+        job_id: str,
+        job: CustomJob,
+    ) -> CustomJob:
+        """Wait for a custom job to complete with adaptive polling."""
+        iteration = 1
+        job_snapshot = job
+
+        while True:
+            status = self._get_job_status(job_id)
+            job_snapshot = CustomJob(
+                id=job_snapshot.id,
+                processing_status=status.processing_status,
+                nickname=job_snapshot.nickname,
+                created_at=job_snapshot.created_at,
+                updated_at=job_snapshot.updated_at,
+                processing_time_seconds=job_snapshot.processing_time_seconds,
+                credits_cost=job_snapshot.credits_cost,
+                extraction_schema=job_snapshot.extraction_schema,
+                user_prompt=job_snapshot.user_prompt,
+                file_names=job_snapshot.file_names,
+                total_page_count=job_snapshot.total_page_count,
+                document_types=job_snapshot.document_types,
+            )
+
+            if status.is_completed:
+                return job_snapshot
+
+            if status.is_failed:
+                raise JobProcessingError(
+                    f"Custom job failed: {status.message or 'Unknown error'}"
+                )
+
+            poll_interval = min(1 * (1.5 ** (iteration - 1)), 10)
+            time.sleep(poll_interval)
+            iteration += 1
 
     # ==================== CONNECTOR CONVERTERS ====================
 
@@ -837,7 +1312,6 @@ class ByteITClient:
         self,
         input_connector: InputConnector,
         output_connector: OutputConnector,
-        result_format: OutputFormat,
         processing_options: ProcessingOptions | None = None,
         queue_for_batch: bool = False,
     ) -> ParseJob:
@@ -848,7 +1322,6 @@ class ByteITClient:
 
         # Build base request data
         data: dict[str, Any] = {
-            "output_format": result_format.value,
             "processing_options": json.dumps(
                 processing_options.to_dict() if processing_options else {}
             ),
@@ -1000,6 +1473,17 @@ class ByteITClient:
         """Build the generic jobs processing-status path."""
         return f"{self._build_job_resource_path(job_id)}status/"
 
+    def _build_schema_collection_path(self) -> str:
+        """Build the saved-schema collection path."""
+        segments = [API_BASE, SCHEMAS_PATH]
+        return "/" + "/".join(segment.strip("/") for segment in segments) + "/"
+
+    def _build_schema_resource_path(self, name: str) -> str:
+        """Build the saved-schema resource path for a schema name."""
+        normalized_name = self._normalize_schema_name(name)
+        encoded_name = quote(normalized_name, safe="")
+        return f"{self._build_schema_collection_path()}{encoded_name}/"
+
     def _extract_job_data(
         self,
         response: dict[str, Any],
@@ -1010,6 +1494,25 @@ class ByteITClient:
             primary_key,
             response.get("job", response.get("document", response)),
         )
+
+    def _normalize_schema_name(self, name: str) -> str:
+        """Normalize a saved-schema name before sending it to the API."""
+        if not isinstance(name, str):
+            raise ValidationError("name must be a non-empty string")
+
+        normalized_name = name.strip()
+        if not normalized_name:
+            raise ValidationError("name must be a non-empty string")
+
+        return normalized_name
+
+    def _is_duplicate_saved_schema_error(self, error: ValidationError) -> bool:
+        """Return True when a validation error represents duplicate saved-schema name."""
+        if error.status_code != 400:
+            return False
+
+        error_message = (error.message or "").lower()
+        return "schema" in error_message and "already exists" in error_message
 
     def _merge_job_status(
         self,
@@ -1154,13 +1657,18 @@ class ByteITClient:
     def _handle_response(self, response: requests.Response) -> dict[str, Any]:
         """Handle API response and raise appropriate exceptions."""
         # Success path
-        if response.status_code in (200, 201):
+        if response.status_code in (200, 201, 204):
             return response.json() if response.content else {}
 
         # Error path - extract details
         try:
             data: dict[str, Any] = response.json() if response.content else {}
-            message = self._extract_error_message(data, response)
+            message: str = (
+                data.get("detail", "")
+                or data.get("error", "")
+                or response.text
+                or "Request failed"
+            )
         except (ValueError, requests.exceptions.JSONDecodeError):
             # Response is not JSON (e.g., HTML error page)
             data = {}

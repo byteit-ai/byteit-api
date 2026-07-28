@@ -9,6 +9,7 @@ VALID_PROCESSING_OPTIONS: set[str] = {
     "languages",
     "page_range",
     "image_annotations",
+    "force_image_annotations",
     "table_enrichment",
     "extraction_type",
 }

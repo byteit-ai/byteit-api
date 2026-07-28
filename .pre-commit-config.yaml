@@ -30,7 +30,7 @@ repos:
 
       - id: release-commit-title
         name: release commit title check
-        entry: scripts/release_preflight.py
+        entry: python scripts/release_preflight.py
         args: [--commit-msg]
         language: python
         pass_filenames: true

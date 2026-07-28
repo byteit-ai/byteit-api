@@ -20,12 +20,17 @@ class ProcessingOptions:
     Attributes:
         languages: List of language codes for OCR/parsing (default: ['en'])
         page_range: Specific pages to process (e.g., '1-5' or '1,3,5')
+        image_annotations: Enable image annotation extraction
+        force_image_annotations: Force image annotation extraction even when
+            image is detected as useless
+        table_enrichment: Enable table enrichment
         extraction_type: Extraction mode used by the backend parser
     """
 
     languages: list[str] = field(default_factory=_default_list)
     page_range: str = field(default="")
     image_annotations: bool = field(default=False)
+    force_image_annotations: bool = field(default=False)
     table_enrichment: bool = field(default=False)
     extraction_type: ExtractionType | str = field(default=ExtractionType.AUTO)
 
@@ -48,6 +53,9 @@ class ProcessingOptions:
         """Normalize processing option values after initialization."""
         self.extraction_type = self._parse_extraction_type(self.extraction_type)
 
+        if self.force_image_annotations:
+            self.image_annotations = True
+
     def to_dict(self) -> dict[str, Any]:
         """Convert ProcessingOptions to dictionary for API communication.
 
@@ -64,6 +72,9 @@ class ProcessingOptions:
 
         if self.image_annotations:
             result["image_annotations"] = self.image_annotations
+
+        if self.force_image_annotations:
+            result["force_image_annotations"] = self.force_image_annotations
 
         if self.table_enrichment:
             result["table_enrichment"] = self.table_enrichment
@@ -85,6 +96,7 @@ class ProcessingOptions:
         languages = data.get("languages", ["en"])
         page_range = data.get("page_range", "")
         image_annotations = data.get("image_annotations", False)
+        force_image_annotations = data.get("force_image_annotations", False)
         table_enrichment = data.get("table_enrichment", False)
         extraction_type = data.get("extraction_type", ExtractionType.AUTO)
 
@@ -92,6 +104,7 @@ class ProcessingOptions:
             languages=languages,
             page_range=page_range,
             image_annotations=image_annotations,
+            force_image_annotations=force_image_annotations,
             table_enrichment=table_enrichment,
             extraction_type=extraction_type,
         )

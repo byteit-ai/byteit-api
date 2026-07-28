@@ -1,0 +1,13 @@
+name: Pytest Unit
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pytest-unit:
+    uses: byteit-ai/.github/.github/workflows/pytest-unit.yml@main
+    with:
+      test_target: tests
+      marker_expression: not integration
+    secrets: inherit

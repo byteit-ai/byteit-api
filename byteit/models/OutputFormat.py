@@ -1,9 +1,9 @@
 """Output format enumeration for document processing."""
 
-from enum import Enum
+from enum import StrEnum
 
 
-class OutputFormat(str, Enum):  # noqa: UP042
+class OutputFormat(StrEnum):
     """Supported output formats for document processing."""
 
     TXT = "txt"
