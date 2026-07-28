@@ -78,7 +78,7 @@ class RateLimitError(ByteITError):
             when the server provides one.
     """
 
-    def __init__(  # noqa: D107
+    def __init__(
         self,
         message: str,
         status_code: int | None = None,

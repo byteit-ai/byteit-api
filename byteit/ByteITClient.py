@@ -2,6 +2,7 @@
 
 import json
 import time
+from collections.abc import Callable
 from contextlib import ExitStack
 from datetime import datetime
 from pathlib import Path
@@ -27,9 +28,9 @@ from .exceptions import (
     ServerError,
     ValidationError,
 )
-from .models.DocumentType import DocumentType
 from .models.CustomJob import CustomJob
 from .models.CustomJobList import CustomJobList
+from .models.DocumentType import DocumentType
 from .models.ExtractJob import ExtractJob
 from .models.ExtractJobList import ExtractJobList
 from .models.JobList import JobList
@@ -95,8 +96,6 @@ class ByteITClient:
                 result = client.get_parse_job_result(details.id)
     """
 
-    # BASE_URL = "https://api.byteit.ai"
-    # BASE_URL = "http://127.0.0.1:8000"
     BASE_URL = "https://byteit.ai"
     DEFAULT_TIMEOUT = 60 * 30  # 30 minutes
 
@@ -198,11 +197,9 @@ class ByteITClient:
 
     def parse_async(
         self,
-        input: str | Path | InputConnector,
+        input: str | Path | InputConnector | list[str | Path],
         processing_options: ProcessingOptions | dict | None = None,
         queue_for_batch: bool = False,
-        *,
-        recursive: bool = False,
     ) -> ParseJob | list[ParseJob]:
         """Submit one or many documents for parsing and return immediately.
 
@@ -212,9 +209,9 @@ class ByteITClient:
 
         ``input`` may be:
 
-        * A single file path (str/Path) or an :class:`InputConnector` - and returns
-        a single :class:`ParseJob`.
-        * A path to a folder - every supported file in the folder is uploaded.
+        * A single file path (str/Path) or an :class:`InputConnector` — returns
+          a single :class:`ParseJob`.
+        * A ``list[str | Path]```of file paths — every file is uploaded.
           Files are packed into as few requests as the backend allows
           (up to :data:`MAX_FILES_PER_REQUEST` files and
           :data:`MAX_TOTAL_REQUEST_BYTES` per request), and requests are sent
@@ -222,38 +219,43 @@ class ByteITClient:
           when rate limited. Returns a ``list[ParseJob]``.
 
         Args:
-            input: File path, folder path, or InputConnector.
+            input: File path, folder path, InputConnector, or a list of file
+                paths.
             processing_options: ProcessingOptions or dict with keys:
                 ``languages`` (list[str]), ``page_range`` (str), and
                 ``extraction_type`` (str or ExtractionType).
             queue_for_batch: When ``True``, the job is queued for batch
                 processing at a reduced credit cost. Processing is not
                 immediate.
-            recursive: When ``input`` is a folder, also include files found in
-                subdirectories. Ignored for single-file inputs.
 
         Returns:
             A single :class:`ParseJob` for a file/connector input, or a
             ``list[ParseJob]`` (one per successfully submitted file) for a
-            folder input.
+            list of file paths.
 
         Example::
 
-            # Single file (unchanged behaviour)
+            # Single file
             job = client.parse_async("document.pdf")
             status = client.get_job_status(job.id)
 
-            # Whole folder - the library splits it into batched requests
-            jobs = client.parse_async("./invoices", recursive=True)
-            for job in jobs:
-                print(job.id, job.processing_status)
+            # Multiple files — the library splits them into batched requests
+            jobs = client.parse_async(["./invoice1.pdf", "./invoice2.pdf"])
+            for j in jobs:
+                print(j.id, j.processing_status)
         """
+        if isinstance(input, list):
+            return self._submit_file_list(
+                [Path(p) if isinstance(p, str) else p for p in input],
+                processing_options,
+                queue_for_batch=queue_for_batch,
+            )
+
         if self._is_directory_input(input):
             return self._submit_folder_async(
                 Path(input),  # type: ignore[arg-type]
                 processing_options,
                 queue_for_batch=queue_for_batch,
-                recursive=recursive,
             )
 
         job, _ = self._submit_job(
@@ -773,22 +775,16 @@ class ByteITClient:
             return Path(input).is_dir()
         return False
 
-    def _submit_folder_async(
+    def _submit_file_list(
         self,
-        folder: Path,
+        files: list[Path],
         processing_options: ProcessingOptions | dict | None,
-        *,
         queue_for_batch: bool,
-        recursive: bool,
         result_format: OutputFormat = OutputFormat.JSON,
     ) -> list[ParseJob]:
-        """Upload every supported file in a folder as batched parse jobs."""
+        """Submit a list of file paths as batched parse jobs."""
         if isinstance(processing_options, dict):
             processing_options = ProcessingOptions.from_dict(processing_options)
-
-        files = self._collect_folder_files(folder, recursive=recursive)
-        if not files:
-            raise ValidationError(f"No supported files found in folder: {folder}")
 
         batches = self._batch_files_by_limits(files)
         data = self._build_localfile_job_data(
@@ -797,10 +793,7 @@ class ByteITClient:
             queue_for_batch=queue_for_batch,
         )
 
-        print(
-            f"Submitting {len(files)} file(s) from '{folder}' "
-            f"in {len(batches)} request(s)..."
-        )
+        print(f"Submitting {len(files)} file(s) in {len(batches)} request(s)...")
 
         created_jobs: list[ParseJob] = []
         failed_files: list[dict[str, Any]] = []
@@ -827,15 +820,36 @@ class ByteITClient:
                     f"{failure.get('error', 'unknown error')}"
                 )
 
-        print(f"Submitted {len(created_jobs)} job(s) from folder '{folder}'.")
+        print(f"Submitted {len(created_jobs)} job(s).")
         return created_jobs
 
-    def _collect_folder_files(self, folder: Path, *, recursive: bool) -> list[Path]:
-        """Collect uploadable files from a folder, skipping unsupported ones."""
-        candidates = folder.rglob("*") if recursive else folder.iterdir()
+    def _submit_folder_async(
+        self,
+        folder: Path,
+        processing_options: ProcessingOptions | dict | None,
+        *,
+        queue_for_batch: bool,
+        result_format: OutputFormat = OutputFormat.JSON,
+    ) -> list[ParseJob]:
+        """Upload every supported file in a folder as batched parse jobs."""
+        files = self._collect_folder_files(folder)
+        if not files:
+            raise ValidationError(f"No supported files found in folder: {folder}")
 
+        print(f"Found {len(files)} supported file(s) in '{folder}'.")
+
+        return self._submit_file_list(
+            files,
+            processing_options,
+            queue_for_batch=queue_for_batch,
+            result_format=result_format,
+        )
+
+    @staticmethod
+    def _collect_folder_files(folder: Path) -> list[Path]:
+        """Collect uploadable files from a folder, skipping unsupported ones."""
         collected: list[Path] = []
-        for path in sorted(candidates):
+        for path in sorted(folder.rglob("*")):
             if not path.is_file():
                 continue
 
@@ -1008,35 +1022,61 @@ class ByteITClient:
             return data
         return result
 
-    def _wait_for_extract_completion(self, job_id: str, job: ExtractJob) -> ExtractJob:
-        """Wait for an extraction job to complete with adaptive polling."""
+    def _poll_until(
+        self,
+        job_id: str,
+        job: Any,
+        update_snapshot: Callable[[Any, JobStatus], Any],
+        error_prefix: str = "Job",
+        tracker: ProgressTracker | None = None,
+    ) -> Any:
+        """Adaptive polling loop shared by parse, extract, and custom jobs."""
         iteration = 1
         job_snapshot = job
 
         while True:
-            status = self._get_job_status(job_id)
-            job_snapshot = ExtractJob(
-                id=job_snapshot.id,
-                processing_status=status.processing_status,
-                input_job_id=job_snapshot.input_job_id,
-                nickname=job_snapshot.nickname,
-                processing_time_seconds=job_snapshot.processing_time_seconds,
-                credits_cost=job_snapshot.credits_cost,
-                extraction_schema=job_snapshot.extraction_schema,
-                extraction_complexity=job_snapshot.extraction_complexity,
-            )
+            status = self._get_job_processing_status(job_id)
+            if isinstance(status, dict):
+                status = JobStatus.from_dict(status)
+
+            job_snapshot = update_snapshot(job_snapshot, status)
+
+            if tracker:
+                tracker.update(job_snapshot)
 
             if status.is_completed:
+                if tracker:
+                    tracker.finalize()
                 return job_snapshot
 
             if status.is_failed:
+                if tracker:
+                    tracker.close()
                 raise JobProcessingError(
-                    f"Extraction job failed: {status.message or 'Unknown error'}"
+                    f"{error_prefix} failed: {status.message or 'Unknown error'}"
                 )
 
             poll_interval = min(1 * (1.5 ** (iteration - 1)), 10)
             time.sleep(poll_interval)
             iteration += 1
+
+    def _wait_for_extract_completion(self, job_id: str, job: ExtractJob) -> ExtractJob:
+        """Wait for an extraction job to complete with adaptive polling."""
+
+        def _update(j: ExtractJob, s: JobStatus) -> ExtractJob:
+            import dataclasses
+
+            return dataclasses.replace(
+                j,
+                processing_status=s.processing_status,
+            )
+
+        return self._poll_until(
+            job_id,
+            job,
+            _update,
+            error_prefix="Extraction job",
+        )
 
     def _build_schema_dict(
         self,
@@ -1230,37 +1270,18 @@ class ByteITClient:
         job: CustomJob,
     ) -> CustomJob:
         """Wait for a custom job to complete with adaptive polling."""
-        iteration = 1
-        job_snapshot = job
 
-        while True:
-            status = self._get_job_status(job_id)
-            job_snapshot = CustomJob(
-                id=job_snapshot.id,
-                processing_status=status.processing_status,
-                nickname=job_snapshot.nickname,
-                created_at=job_snapshot.created_at,
-                updated_at=job_snapshot.updated_at,
-                processing_time_seconds=job_snapshot.processing_time_seconds,
-                credits_cost=job_snapshot.credits_cost,
-                extraction_schema=job_snapshot.extraction_schema,
-                user_prompt=job_snapshot.user_prompt,
-                file_names=job_snapshot.file_names,
-                total_page_count=job_snapshot.total_page_count,
-                document_types=job_snapshot.document_types,
-            )
+        def _update(j: CustomJob, s: JobStatus) -> CustomJob:
+            import dataclasses
 
-            if status.is_completed:
-                return job_snapshot
+            return dataclasses.replace(j, processing_status=s.processing_status)
 
-            if status.is_failed:
-                raise JobProcessingError(
-                    f"Custom job failed: {status.message or 'Unknown error'}"
-                )
-
-            poll_interval = min(1 * (1.5 ** (iteration - 1)), 10)
-            time.sleep(poll_interval)
-            iteration += 1
+        return self._poll_until(
+            job_id,
+            job,
+            _update,
+            error_prefix="Custom job",
+        )
 
     # ==================== CONNECTOR CONVERTERS ====================
 
@@ -1392,29 +1413,18 @@ class ByteITClient:
     ) -> ParseJob:
         """Wait for job to complete with adaptive polling: MIN(1*1.5^(x-1), 10)."""
         tracker = ProgressTracker(input_connector)
-        iteration = 1
-        job_snapshot = job
 
-        while True:
-            status = self._get_job_processing_status(job_id)
-            if isinstance(status, dict):
-                status = JobStatus.from_dict(status)
-            job_snapshot = self._merge_job_status(job_id, status, job_snapshot)
-            tracker.update(job_snapshot)
+        def _update(j: ParseJob | None, s: JobStatus) -> ParseJob:
+            return self._merge_job_status(job_id, s, j)
 
-            if status.is_completed:
-                tracker.finalize()
-                return job_snapshot
-
-            if status.is_failed:
-                tracker.close()
-                raise JobProcessingError(
-                    f"Job failed: {job_snapshot.processing_error or 'Unknown error'}"
-                )
-
-            poll_interval = min(1 * (1.5 ** (iteration - 1)), 10)
-            time.sleep(poll_interval)
-            iteration += 1
+        initial = job
+        return self._poll_until(
+            job_id,
+            initial,
+            _update,
+            error_prefix="Job",
+            tracker=tracker,
+        )
 
     def _download_parse_result(
         self,
@@ -1524,29 +1534,20 @@ class ByteITClient:
         if isinstance(status, dict):
             status = JobStatus.from_dict(status)
 
-        processing_status = status.processing_status
-        processing_error = status.message
-
         if job is None:
             return ParseJob(
                 id=job_id,
-                processing_status=processing_status,
+                processing_status=status.processing_status,
                 result_format="",
-                processing_error=processing_error,
+                processing_error=status.message,
             )
 
-        return ParseJob(
-            id=job.id,
-            processing_status=processing_status,
-            result_format=job.result_format,
-            nickname=job.nickname,
-            metadata=job.metadata,
-            processing_options=job.processing_options,
-            processing_time_seconds=job.processing_time_seconds,
-            processing_error=processing_error or job.processing_error,
-            credits_cost=job.credits_cost,
-            input_connector=job.input_connector,
-            output_connector=job.output_connector,
+        import dataclasses
+
+        return dataclasses.replace(
+            job,
+            processing_status=status.processing_status,
+            processing_error=status.message or job.processing_error,
         )
 
     def _submit_parse_job_request(

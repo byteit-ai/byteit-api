@@ -138,7 +138,7 @@ jobs:
 
   notify-failure:
     name: AdolfoBOT — Notify Failure
-    needs: [validate, publish]
+    needs: [validate-release, publish]
     if: failure()
     uses: byteit-ai/.github/.github/workflows/adolfobot.yml@main
     with:

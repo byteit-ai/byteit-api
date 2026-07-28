@@ -68,12 +68,7 @@ class CustomJob:
             raise KeyError("Custom job response is missing required field: id")
 
         file_names = data.get("file_names")
-        if file_names is not None and not isinstance(file_names, list):
-            file_names = list(file_names)
-
         document_types = data.get("document_types")
-        if document_types is not None and not isinstance(document_types, list):
-            document_types = list(document_types)
 
         return cls(
             id=job_id,

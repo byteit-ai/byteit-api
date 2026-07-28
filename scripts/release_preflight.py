@@ -39,7 +39,10 @@ def _run(command: list[str], label: str) -> None:
 def _get_head_commit_message() -> str | None:
     result = subprocess.run(
         ["git", "log", "-1", "--pretty=%s"],
-        cwd=ROOT, check=False, capture_output=True, text=True,
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
     )
     return result.stdout.strip() if result.returncode == 0 else None
 
@@ -47,7 +50,10 @@ def _get_head_commit_message() -> str | None:
 def _get_latest_tag() -> str | None:
     result = subprocess.run(
         ["git", "tag", "-l", "v*", "--sort=-v:refname"],
-        cwd=ROOT, check=False, capture_output=True, text=True,
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
     )
     tags = [t.strip() for t in result.stdout.splitlines() if t.strip()]
     return tags[0] if tags else None
@@ -131,7 +137,9 @@ def _validate_commit_message(version: str, commit_msg: str | None) -> None:
         _fail(f"Commit title must be exactly: chore(release): {version}")
     msg_version = match.group(1)
     if msg_version != version:
-        _fail(f"Commit title version ({msg_version}) does not match pyproject.toml ({version})")
+        _fail(
+            f"Commit title version ({msg_version}) does not match pyproject.toml ({version})"
+        )
     print(f"  ✓ commit title: {commit_msg}")
 
 
@@ -143,7 +151,9 @@ def _validate_semver_bump(version: str) -> None:
 
     prev_version = latest_tag.lstrip("v")
     if not SEMVER_RE.match(prev_version):
-        print(f"  ⚠ previous tag {latest_tag} is not valid semver; skipping bump validation")
+        print(
+            f"  ⚠ previous tag {latest_tag} is not valid semver; skipping bump validation"
+        )
         return
 
     prev_x, prev_y, prev_z = map(int, prev_version.split("."))
@@ -159,7 +169,9 @@ def _validate_semver_bump(version: str) -> None:
             f"Invalid semver bump: {prev_version} -> {version}. "
             "Expected exactly one valid bump: major (+1.0.0), minor (+0.1.0), or patch (+0.0.1)."
         )
-    print(f"  ✓ valid {_bump_type(prev_x, prev_y, prev_z, curr_x, curr_y, curr_z)} bump from {prev_version}")
+    print(
+        f"  ✓ valid {_bump_type(prev_x, prev_y, prev_z, curr_x, curr_y, curr_z)} bump from {prev_version}"
+    )
 
 
 def _bump_type(px, py, pz, cx, cy, cz) -> str:
@@ -174,7 +186,9 @@ def _check_tag_not_exists(version: str) -> None:
     tag = f"v{version}"
     result = subprocess.run(
         ["git", "rev-parse", f"refs/tags/{tag}"],
-        cwd=ROOT, check=False, capture_output=True,
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
     )
     if result.returncode == 0:
         _fail(f"Tag {tag} already exists — this version was already released")
@@ -239,7 +253,9 @@ def run_commit_msg(message_file: Path) -> None:
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Release validation checks")
     parser.add_argument("--ci", action="store_true", help="Run full CI validation")
-    parser.add_argument("--pre-commit", action="store_true", help="Run pre-commit validation")
+    parser.add_argument(
+        "--pre-commit", action="store_true", help="Run pre-commit validation"
+    )
     parser.add_argument(
         "--commit-msg",
         action="store_true",
