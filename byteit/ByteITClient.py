@@ -706,7 +706,6 @@ class ByteITClient:
             input_connector=input_connector,
             output_connector=output_connector,
             processing_options=processing_options,
-            result_format=result_format,
             queue_for_batch=queue_for_batch,
         )
         return job, input_connector
