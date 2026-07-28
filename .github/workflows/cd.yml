@@ -6,6 +6,11 @@ permissions:
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish (e.g. 1.2.0)"
+        required: true
 
 jobs:
   jira-guard:
@@ -17,7 +22,7 @@ jobs:
     secrets: inherit
 
   validate-release:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     name: Validate release metadata
     runs-on: ubuntu-latest
 
@@ -35,20 +40,28 @@ jobs:
       - name: Detect release commit
         id: release_meta
         run: |
-          COMMIT_MSG=$(git log -1 --pretty=%s)
-          echo "Commit message: $COMMIT_MSG"
-
-          if echo "$COMMIT_MSG" | grep -Eq '^chore\(release\): [0-9]+\.[0-9]+\.[0-9]+$'; then
-            VERSION=$(echo "$COMMIT_MSG" | sed -E 's/^chore\(release\): ([0-9]+\.[0-9]+\.[0-9]+)$/\1/')
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
             echo "should_publish=true" >> "$GITHUB_OUTPUT"
             echo "version=$VERSION" >> "$GITHUB_OUTPUT"
             echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
-            echo "Release commit detected: v$VERSION"
+            echo "Manual release: v$VERSION"
           else
-            echo "should_publish=false" >> "$GITHUB_OUTPUT"
-            echo "version=" >> "$GITHUB_OUTPUT"
-            echo "tag=" >> "$GITHUB_OUTPUT"
-            echo "Not a release commit. Workflow will exit without publishing."
+            COMMIT_MSG=$(git log -1 --pretty=%s)
+            echo "Commit message: $COMMIT_MSG"
+
+            if echo "$COMMIT_MSG" | grep -Eq '^chore\(release\): [0-9]+\.[0-9]+\.[0-9]+$'; then
+              VERSION=$(echo "$COMMIT_MSG" | sed -E 's/^chore\(release\): ([0-9]+\.[0-9]+\.[0-9]+)$/\1/')
+              echo "should_publish=true" >> "$GITHUB_OUTPUT"
+              echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+              echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+              echo "Release commit detected: v$VERSION"
+            else
+              echo "should_publish=false" >> "$GITHUB_OUTPUT"
+              echo "version=" >> "$GITHUB_OUTPUT"
+              echo "tag=" >> "$GITHUB_OUTPUT"
+              echo "Not a release commit. Workflow will exit without publishing."
+            fi
           fi
 
       - name: Ensure merge commit is on main
