@@ -22,7 +22,7 @@ ByteIT is a Python client for document parsing and structured extraction. Submit
 pip install byteit
 ```
 
-Requires Python 3.8+ and a ByteIT API key. For structured extraction, install with `pip install byteit[extract]`.
+Requires Python 3.8+ and a ByteIT API key. For structured extraction, install with `pip install byteit`.
 
 ## Quick Start
 

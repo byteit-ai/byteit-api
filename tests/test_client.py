@@ -598,7 +598,7 @@ class TestJobEndpointRouting:
 class TestWaitForCompletion:
     """Test _wait_for_completion method."""
 
-    @patch("byteit.ByteITClient.ProgressTracker")
+    @patch("byteit._polling.ProgressTracker")
     @patch.object(ByteITClient, "_get_job_processing_status")
     @patch("time.sleep")
     def test_wait_returns_on_completion(self, mock_sleep, mock_get_status, mock_tracker):
@@ -618,7 +618,7 @@ class TestWaitForCompletion:
         mock_tracker.return_value.update.assert_called()
         mock_tracker.return_value.finalize.assert_called_once()
 
-    @patch("byteit.ByteITClient.ProgressTracker")
+    @patch("byteit._polling.ProgressTracker")
     @patch.object(ByteITClient, "_get_job_processing_status")
     def test_wait_raises_on_failure(self, mock_get_status, mock_tracker):
         """Failed job raises JobProcessingError."""
@@ -633,7 +633,7 @@ class TestWaitForCompletion:
             client._wait_for_completion("job_123")
         mock_tracker.return_value.close.assert_called_once()
 
-    @patch("byteit.ByteITClient.ProgressTracker")
+    @patch("byteit._polling.ProgressTracker")
     @patch.object(ByteITClient, "_get_job_processing_status")
     @patch("time.sleep")
     def test_wait_adaptive_polling_formula(

@@ -2,16 +2,34 @@
 
 import json
 import time
-from collections.abc import Callable
-from contextlib import ExitStack
 from datetime import datetime
 from pathlib import Path
 from types import TracebackType
 from typing import Any
-from urllib.parse import quote
 
 import requests
 
+from ._http import (
+    CUSTOM_JOBS_PATH,
+    EXTRACT_JOBS_PATH,
+    PARSE_JOBS_PATH,
+    build_job_collection_path,
+    build_job_resource_path,
+    build_job_result_path,
+    build_job_status_path,
+    build_schema_collection_path,
+    build_schema_resource_path,
+    build_url,
+    extract_job_data,
+    handle_response,
+    is_duplicate_saved_schema_error,
+)
+from ._polling import (
+    wait_for_completion,
+    wait_for_custom_job_completion,
+    wait_for_extract_completion,
+)
+from ._rate_limit import RateLimitedSubmitter
 from .connectors import (
     InputConnector,
     LocalFileInputConnector,
@@ -20,12 +38,7 @@ from .connectors import (
 )
 from .exceptions import (
     APIKeyError,
-    AuthenticationError,
-    ByteITError,
     JobProcessingError,
-    RateLimitError,
-    ResourceNotFoundError,
-    ServerError,
     ValidationError,
 )
 from .models.CustomJob import CustomJob
@@ -40,21 +53,11 @@ from .models.ParseJob import ParseJob
 from .models.ProcessingOptions import ProcessingOptions
 from .models.SavedSchema import SavedSchema
 from .models.SavedSchemaList import SavedSchemaList
-from .progress import ProgressTracker
 from .validations import (
     MAX_FILE_SIZE_BYTES,
     MAX_FILES_PER_REQUEST,
     MAX_TOTAL_REQUEST_BYTES,
 )
-
-# API configuration
-API_VERSION = "v1"
-API_BASE = f"/{API_VERSION}"
-JOBS_PATH = "jobs"
-PARSE_JOBS_PATH = "parse-jobs"
-EXTRACT_JOBS_PATH = "extract-jobs"
-SCHEMAS_PATH = "schemas"
-CUSTOM_JOBS_PATH = "custom-jobs"
 
 
 class ByteITClient:
@@ -125,14 +128,18 @@ class ByteITClient:
             raise APIKeyError("API key must be a non-empty string")
 
         self.api_key = api_key
-        self._rate_limit_max_retries = rate_limit_max_retries
-        self._rate_limit_base_delay = rate_limit_base_delay
-        self._rate_limit_max_delay = rate_limit_max_delay
         self._batch_request_delay = batch_request_delay
-        self._submission_delay = 0.0
-        self._last_submission_at: float | None = None
         self._session = requests.Session()
         self._session.headers.update({"X-API-Key": self.api_key})
+
+        self._rate_limiter = RateLimitedSubmitter(
+            session=self._session,
+            base_url=self.BASE_URL,
+            default_timeout=self.DEFAULT_TIMEOUT,
+            rate_limit_max_retries=rate_limit_max_retries,
+            rate_limit_base_delay=rate_limit_base_delay,
+            rate_limit_max_delay=rate_limit_max_delay,
+        )
 
     # ==================== PUBLIC API ====================
 
@@ -536,7 +543,7 @@ class ByteITClient:
                 name=normalized_name, schema_json=schema_dict
             )
         except ValidationError as exc:
-            if not self._is_duplicate_saved_schema_error(exc):
+            if not is_duplicate_saved_schema_error(exc):
                 raise
 
             existing_schema = self._get_saved_schema(normalized_name)
@@ -802,7 +809,7 @@ class ByteITClient:
             if index > 1 and self._batch_request_delay > 0:
                 time.sleep(self._batch_request_delay)
 
-            response = self._submit_multi_file_batch(batch, data)
+            response = self._rate_limiter.submit_multi_file_batch(batch, data)
             jobs, failures = self._parse_multi_file_response(response)
             created_jobs.extend(jobs)
             failed_files.extend(failures)
@@ -922,42 +929,6 @@ class ByteITClient:
             data["queue_for_batch"] = "true"
         return data
 
-    def _submit_multi_file_batch(
-        self,
-        file_paths: list[Path],
-        data: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Submit one multi-file request, retrying/spacing when rate limited."""
-        for attempt in range(self._rate_limit_max_retries + 1):
-            try:
-                with ExitStack() as stack:
-                    request_files = []
-                    for path in file_paths:
-                        handle = stack.enter_context(path.open("rb"))
-                        request_files.append(("files", (path.name, handle)))
-
-                    self._wait_before_submission()
-                    response = self._request(
-                        "POST",
-                        self._build_job_collection_path(PARSE_JOBS_PATH),
-                        files=request_files,
-                        data=data,
-                    )
-                self._record_successful_submission()
-                return response
-            except RateLimitError as exc:
-                if attempt >= self._rate_limit_max_retries:
-                    raise
-                delay = self._backoff_after_rate_limit(exc)
-                print(
-                    "Rate limited. Waiting "
-                    f"{delay:.1f}s before retry "
-                    f"({attempt + 1}/{self._rate_limit_max_retries})..."
-                )
-                time.sleep(delay)
-
-        raise RateLimitError("Rate limit exceeded after retries.", status_code=429)
-
     @staticmethod
     def _parse_multi_file_response(
         response: dict[str, Any],
@@ -982,36 +953,32 @@ class ByteITClient:
         schema_dict = self._build_schema_dict(schema)
         response = self._request(
             "POST",
-            self._build_job_collection_path(EXTRACT_JOBS_PATH),
+            build_job_collection_path(EXTRACT_JOBS_PATH),
             json={
                 "parse_job_id": parse_job_id,
                 "schema": schema_dict,
                 "extraction_complexity": extraction_complexity,
             },
         )
-        job_data = self._extract_job_data(response, primary_key="extract_job")
+        job_data = extract_job_data(response, primary_key="extract_job")
         return ExtractJob.from_dict(job_data)
 
     def _list_extract_jobs(self) -> ExtractJobList:
         """List all extract jobs."""
-        response = self._request(
-            "GET", self._build_job_collection_path(EXTRACT_JOBS_PATH)
-        )
+        response = self._request("GET", build_job_collection_path(EXTRACT_JOBS_PATH))
         return ExtractJobList.from_dict(response)
 
     def _get_extract_job_details(self, job_id: str) -> ExtractJob:
         """Get current extract-job details."""
         response = self._request(
-            "GET", self._build_job_resource_path(job_id, EXTRACT_JOBS_PATH)
+            "GET", build_job_resource_path(job_id, EXTRACT_JOBS_PATH)
         )
-        job_data = self._extract_job_data(response, primary_key="extract_job")
+        job_data = extract_job_data(response, primary_key="extract_job")
         return ExtractJob.from_dict(job_data)
 
     def _download_extract_result(self, job_id: str) -> dict[str, Any]:
         """Download the JSON result of a completed extraction job."""
-        data = self._request(
-            "GET", self._build_job_result_path(job_id, EXTRACT_JOBS_PATH)
-        )
+        data = self._request("GET", build_job_result_path(job_id, EXTRACT_JOBS_PATH))
         data = data if isinstance(data, dict) else {}
         if not data.get("ready", True):
             status = data.get("processing_status", "unknown")
@@ -1021,62 +988,6 @@ class ByteITClient:
         if not isinstance(result, dict):
             return data
         return result
-
-    def _poll_until(
-        self,
-        job_id: str,
-        job: Any,
-        update_snapshot: Callable[[Any, JobStatus], Any],
-        error_prefix: str = "Job",
-        tracker: ProgressTracker | None = None,
-    ) -> Any:
-        """Adaptive polling loop shared by parse, extract, and custom jobs."""
-        iteration = 1
-        job_snapshot = job
-
-        while True:
-            status = self._get_job_processing_status(job_id)
-            if isinstance(status, dict):
-                status = JobStatus.from_dict(status)
-
-            job_snapshot = update_snapshot(job_snapshot, status)
-
-            if tracker:
-                tracker.update(job_snapshot)
-
-            if status.is_completed:
-                if tracker:
-                    tracker.finalize()
-                return job_snapshot
-
-            if status.is_failed:
-                if tracker:
-                    tracker.close()
-                raise JobProcessingError(
-                    f"{error_prefix} failed: {status.message or 'Unknown error'}"
-                )
-
-            poll_interval = min(1 * (1.5 ** (iteration - 1)), 10)
-            time.sleep(poll_interval)
-            iteration += 1
-
-    def _wait_for_extract_completion(self, job_id: str, job: ExtractJob) -> ExtractJob:
-        """Wait for an extraction job to complete with adaptive polling."""
-
-        def _update(j: ExtractJob, s: JobStatus) -> ExtractJob:
-            import dataclasses
-
-            return dataclasses.replace(
-                j,
-                processing_status=s.processing_status,
-            )
-
-        return self._poll_until(
-            job_id,
-            job,
-            _update,
-            error_prefix="Extraction job",
-        )
 
     def _build_schema_dict(
         self,
@@ -1116,24 +1027,24 @@ class ByteITClient:
         """Persist a pre-built saved schema for the authenticated user."""
         response = self._request(
             "POST",
-            self._build_schema_collection_path(),
+            build_schema_collection_path(),
             json={"name": name, "schema_json": schema_json},
         )
         return SavedSchema.from_dict(response)
 
     def _list_saved_schemas(self) -> SavedSchemaList:
         """List all saved schemas for the authenticated user."""
-        response = self._request("GET", self._build_schema_collection_path())
+        response = self._request("GET", build_schema_collection_path())
         return SavedSchemaList.from_dict(response)
 
     def _get_saved_schema(self, name: str) -> SavedSchema:
         """Retrieve a saved schema by name."""
-        response = self._request("GET", self._build_schema_resource_path(name))
+        response = self._request("GET", build_schema_resource_path(name))
         return SavedSchema.from_dict(response)
 
     def _delete_saved_schema(self, name: str) -> bool:
         """Delete a saved schema by name."""
-        self._request("DELETE", self._build_schema_resource_path(name))
+        self._request("DELETE", build_schema_resource_path(name))
         return True
 
     # ==================== CUSTOM JOB INTERNAL METHODS ====================
@@ -1192,7 +1103,7 @@ class ByteITClient:
 
             response = self._request(
                 "POST",
-                self._build_job_collection_path(CUSTOM_JOBS_PATH),
+                build_job_collection_path(CUSTOM_JOBS_PATH),
                 files=multipart_files,
                 data=data,
             )
@@ -1201,7 +1112,7 @@ class ByteITClient:
                 if file_obj and hasattr(file_obj, "close") and not file_obj.closed:
                     file_obj.close()
 
-        job_data = self._extract_job_data(response, primary_key="custom_job")
+        job_data = extract_job_data(response, primary_key="custom_job")
         return CustomJob.from_dict(job_data)
 
     def _list_custom_jobs(
@@ -1218,17 +1129,17 @@ class ByteITClient:
 
         response = self._request(
             "GET",
-            self._build_job_collection_path(CUSTOM_JOBS_PATH),
+            build_job_collection_path(CUSTOM_JOBS_PATH),
             params=params or None,
         )
         return CustomJobList.from_dict(response)
 
     def _download_custom_job_result(self, job_id: str) -> bytes:
         """Download the raw result bytes of a completed custom job."""
-        url = self._build_url(self._build_job_result_path(job_id, CUSTOM_JOBS_PATH))
+        url = build_url(self.BASE_URL, build_job_result_path(job_id, CUSTOM_JOBS_PATH))
         response = self._session.get(url, timeout=self.DEFAULT_TIMEOUT)
         if response.status_code not in (200, 201):
-            self._handle_response(response)
+            handle_response(response)
 
         content_disposition = response.headers.get("Content-Disposition", "")
         content_type = response.headers.get("Content-Type", "")
@@ -1239,7 +1150,7 @@ class ByteITClient:
             return response.content
 
         if "application/json" in content_type:
-            data = self._handle_response(response)
+            data = handle_response(response)
             if not data.get("ready", True):
                 status = data.get("processing_status", "unknown")
                 raise JobProcessingError(f"Result not available. Job status: {status}")
@@ -1263,25 +1174,6 @@ class ByteITClient:
         if isinstance(parsed, dict):
             return parsed
         return content.decode("utf-8")
-
-    def _wait_for_custom_job_completion(
-        self,
-        job_id: str,
-        job: CustomJob,
-    ) -> CustomJob:
-        """Wait for a custom job to complete with adaptive polling."""
-
-        def _update(j: CustomJob, s: JobStatus) -> CustomJob:
-            import dataclasses
-
-            return dataclasses.replace(j, processing_status=s.processing_status)
-
-        return self._poll_until(
-            job_id,
-            job,
-            _update,
-            error_prefix="Custom job",
-        )
 
     # ==================== CONNECTOR CONVERTERS ====================
 
@@ -1369,7 +1261,7 @@ class ByteITClient:
         else:
             raise ValidationError(f"Unsupported connector type: {connector_type}")
 
-        response = self._submit_parse_job_request(
+        response = self._rate_limiter.submit_parse_job_request(
             connector_type=connector_type,
             input_connector=input_connector,
             data=data,
@@ -1380,20 +1272,18 @@ class ByteITClient:
         if "job_id" in response:
             return self._get_parse_job_details(response["job_id"])
 
-        job_data = self._extract_job_data(response, primary_key="parse_job")
+        job_data = extract_job_data(response, primary_key="parse_job")
         return ParseJob.from_dict(job_data)
 
     def _get_parse_job_details(self, job_id: str) -> ParseJob:
         """Get current parse-job details."""
-        response = self._request(
-            "GET", self._build_job_resource_path(job_id, PARSE_JOBS_PATH)
-        )
-        job_data = self._extract_job_data(response, primary_key="parse_job")
+        response = self._request("GET", build_job_resource_path(job_id, PARSE_JOBS_PATH))
+        job_data = extract_job_data(response, primary_key="parse_job")
         return ParseJob.from_dict(job_data)
 
     def _get_job_status(self, job_id: str) -> JobStatus:
         """Get lightweight processing status from the generic jobs endpoint."""
-        response = self._request("GET", self._build_job_status_path(job_id))
+        response = self._request("GET", build_job_status_path(job_id))
         return JobStatus.from_dict(response)
 
     def _get_job_processing_status(self, job_id: str) -> JobStatus:
@@ -1402,29 +1292,8 @@ class ByteITClient:
 
     def _list_parse_jobs(self) -> JobList:
         """List all parse jobs."""
-        response = self._request("GET", self._build_job_collection_path(PARSE_JOBS_PATH))
+        response = self._request("GET", build_job_collection_path(PARSE_JOBS_PATH))
         return JobList.from_dict(response)
-
-    def _wait_for_completion(
-        self,
-        job_id: str,
-        input_connector: InputConnector | None = None,
-        job: ParseJob | None = None,
-    ) -> ParseJob:
-        """Wait for job to complete with adaptive polling: MIN(1*1.5^(x-1), 10)."""
-        tracker = ProgressTracker(input_connector)
-
-        def _update(j: ParseJob | None, s: JobStatus) -> ParseJob:
-            return self._merge_job_status(job_id, s, j)
-
-        initial = job
-        return self._poll_until(
-            job_id,
-            initial,
-            _update,
-            error_prefix="Job",
-            tracker=tracker,
-        )
 
     def _download_parse_result(
         self,
@@ -1432,13 +1301,13 @@ class ByteITClient:
         result_format: OutputFormat | None = None,
     ) -> bytes:
         """Download parse job result."""
-        url = self._build_url(self._build_job_result_path(job_id, PARSE_JOBS_PATH))
+        url = build_url(self.BASE_URL, build_job_result_path(job_id, PARSE_JOBS_PATH))
         params = (
             {"output_format": result_format.value} if result_format is not None else {}
         )
         response = self._session.get(url, params=params, timeout=self.DEFAULT_TIMEOUT)
         if response.status_code not in (200, 201):
-            self._handle_response(response)
+            handle_response(response)
 
         content_disposition = response.headers.get("Content-Disposition", "")
         content_type = response.headers.get("Content-Type", "")
@@ -1449,7 +1318,7 @@ class ByteITClient:
 
         # Handle JSON response (not ready or error)
         if "application/json" in content_type:
-            data = self._handle_response(response)
+            data = handle_response(response)
             if not data.get("ready", False):
                 status = data.get("processing_status", "unknown")
                 raise JobProcessingError(f"Result not available. Job status: {status}")
@@ -1458,52 +1327,47 @@ class ByteITClient:
         # File response
         return response.content
 
+    # ==================== BACKWARD-COMPAT FORWARDERS ====================
+
+    def _handle_response(self, response: requests.Response) -> dict[str, Any]:
+        """Forward to the extracted HTTP helper."""
+        return handle_response(response)
+
+    def _wait_for_completion(
+        self,
+        job_id: str,
+        input_connector: InputConnector | None = None,
+        job: ParseJob | None = None,
+    ) -> ParseJob:
+        """Forward to the extracted polling helper."""
+        return wait_for_completion(
+            self._get_job_processing_status,
+            job_id,
+            input_connector=input_connector,
+            job=job,
+        )
+
+    def _wait_for_extract_completion(self, job_id: str, job: ExtractJob) -> ExtractJob:
+        """Forward to the extracted polling helper."""
+        return wait_for_extract_completion(
+            self._get_job_processing_status,
+            job_id,
+            job,
+        )
+
+    def _wait_for_custom_job_completion(self, job_id: str, job: CustomJob) -> CustomJob:
+        """Forward to the extracted polling helper."""
+        return wait_for_custom_job_completion(
+            self._get_job_processing_status,
+            job_id,
+            job,
+        )
+
     # ==================== HTTP HELPERS ====================
 
     def _build_url(self, path: str) -> str:
         """Build full URL."""
-        return f"{self.BASE_URL}/{path.lstrip('/')}"
-
-    def _build_job_collection_path(self, job_type: str | None = None) -> str:
-        """Build a collection path under the jobs API namespace."""
-        segments = [API_BASE, JOBS_PATH]
-        if job_type:
-            segments.append(job_type)
-        return "/" + "/".join(segment.strip("/") for segment in segments) + "/"
-
-    def _build_job_resource_path(self, job_id: str, job_type: str | None = None) -> str:
-        """Build a resource path for a specific job type."""
-        return f"{self._build_job_collection_path(job_type)}{job_id}/"
-
-    def _build_job_result_path(self, job_id: str, job_type: str | None = None) -> str:
-        """Build a result download path for a specific job type."""
-        return f"{self._build_job_resource_path(job_id, job_type)}result/"
-
-    def _build_job_status_path(self, job_id: str) -> str:
-        """Build the generic jobs processing-status path."""
-        return f"{self._build_job_resource_path(job_id)}status/"
-
-    def _build_schema_collection_path(self) -> str:
-        """Build the saved-schema collection path."""
-        segments = [API_BASE, SCHEMAS_PATH]
-        return "/" + "/".join(segment.strip("/") for segment in segments) + "/"
-
-    def _build_schema_resource_path(self, name: str) -> str:
-        """Build the saved-schema resource path for a schema name."""
-        normalized_name = self._normalize_schema_name(name)
-        encoded_name = quote(normalized_name, safe="")
-        return f"{self._build_schema_collection_path()}{encoded_name}/"
-
-    def _extract_job_data(
-        self,
-        response: dict[str, Any],
-        primary_key: str,
-    ) -> dict[str, Any]:
-        """Extract a job payload from known API response shapes."""
-        return response.get(
-            primary_key,
-            response.get("job", response.get("document", response)),
-        )
+        return build_url(self.BASE_URL, path)
 
     def _normalize_schema_name(self, name: str) -> str:
         """Normalize a saved-schema name before sending it to the API."""
@@ -1516,190 +1380,12 @@ class ByteITClient:
 
         return normalized_name
 
-    def _is_duplicate_saved_schema_error(self, error: ValidationError) -> bool:
-        """Return True when a validation error represents duplicate saved-schema name."""
-        if error.status_code != 400:
-            return False
-
-        error_message = (error.message or "").lower()
-        return "schema" in error_message and "already exists" in error_message
-
-    def _merge_job_status(
-        self,
-        job_id: str,
-        status: JobStatus | dict[str, Any],
-        job: ParseJob | None,
-    ) -> ParseJob:
-        """Project a lightweight status response onto a ParseJob-shaped object."""
-        if isinstance(status, dict):
-            status = JobStatus.from_dict(status)
-
-        if job is None:
-            return ParseJob(
-                id=job_id,
-                processing_status=status.processing_status,
-                result_format="",
-                processing_error=status.message,
-            )
-
-        import dataclasses
-
-        return dataclasses.replace(
-            job,
-            processing_status=status.processing_status,
-            processing_error=status.message or job.processing_error,
-        )
-
-    def _submit_parse_job_request(
-        self,
-        connector_type: str,
-        input_connector: InputConnector,
-        data: dict[str, Any],
-        files: dict[str, Any] | None,
-    ) -> dict[str, Any]:
-        """Submit a parse job, retrying and spacing requests when rate limited."""
-        for attempt in range(self._rate_limit_max_retries + 1):
-            file_obj = None
-            request_files = files
-            try:
-                if connector_type == "localfile":
-                    filename, file_obj = input_connector.get_file_data()
-                    request_files = {"file": (filename, file_obj)}
-
-                self._wait_before_submission()
-                response = self._request(
-                    "POST",
-                    self._build_job_collection_path(PARSE_JOBS_PATH),
-                    files=request_files,
-                    data=data,
-                )
-                self._record_successful_submission()
-                return response
-            except RateLimitError as exc:
-                if attempt >= self._rate_limit_max_retries:
-                    raise
-                delay = self._backoff_after_rate_limit(exc)
-                print(
-                    "Rate limited. Waiting "
-                    f"{delay:.1f}s before retry "
-                    f"({attempt + 1}/{self._rate_limit_max_retries})..."
-                )
-                time.sleep(delay)
-            finally:
-                if file_obj and hasattr(file_obj, "close") and not file_obj.closed:
-                    file_obj.close()
-
-        raise RateLimitError("Rate limit exceeded after retries.", status_code=429)
-
-    def _wait_before_submission(self) -> None:
-        """Sleep when a previous rate limit requires spacing between submissions."""
-        if self._submission_delay <= 0 or self._last_submission_at is None:
-            return
-
-        elapsed = time.monotonic() - self._last_submission_at
-        wait_time = self._submission_delay - elapsed
-        if wait_time > 0:
-            time.sleep(wait_time)
-
-    def _record_successful_submission(self) -> None:
-        """Track submission timing and gradually reduce adaptive throttling."""
-        self._last_submission_at = time.monotonic()
-        if self._submission_delay > self._rate_limit_base_delay:
-            self._submission_delay = max(
-                self._rate_limit_base_delay,
-                self._submission_delay * 0.5,
-            )
-
-    def _backoff_after_rate_limit(self, error: RateLimitError) -> float:
-        """Increase spacing between submissions and return the wait duration."""
-        suggested_delay = error.retry_after_seconds or self._rate_limit_base_delay
-        if self._submission_delay <= 0:
-            self._submission_delay = min(suggested_delay, self._rate_limit_max_delay)
-        else:
-            self._submission_delay = min(
-                max(self._submission_delay * 2, suggested_delay),
-                self._rate_limit_max_delay,
-            )
-        return max(suggested_delay, self._submission_delay)
-
-    @staticmethod
-    def _parse_retry_after(value: str | None) -> float | None:
-        """Parse a Retry-After header value into seconds."""
-        if not value:
-            return None
-        try:
-            return float(value)
-        except ValueError:
-            return None
-
     def _request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
         """Make HTTP request."""
         url = self._build_url(path)
         kwargs.setdefault("timeout", self.DEFAULT_TIMEOUT)
         response = self._session.request(method, url, **kwargs)
-        return self._handle_response(response)
-
-    @staticmethod
-    def _extract_error_message(
-        data: dict[str, Any],
-        response: requests.Response,
-    ) -> str:
-        """Return a human-readable API error message from a JSON error body."""
-        for key in ("detail", "error"):
-            value = data.get(key)
-            if isinstance(value, str) and value.strip():
-                return value
-
-        if response.text:
-            return response.text
-
-        return f"Request failed with status {response.status_code}"
-
-    def _handle_response(self, response: requests.Response) -> dict[str, Any]:
-        """Handle API response and raise appropriate exceptions."""
-        # Success path
-        if response.status_code in (200, 201, 204):
-            return response.json() if response.content else {}
-
-        # Error path - extract details
-        try:
-            data: dict[str, Any] = response.json() if response.content else {}
-            message: str = (
-                data.get("detail", "")
-                or data.get("error", "")
-                or response.text
-                or "Request failed"
-            )
-        except (ValueError, requests.exceptions.JSONDecodeError):
-            # Response is not JSON (e.g., HTML error page)
-            data = {}
-            message = self._extract_error_message(data, response)
-
-        if response.status_code == 429:
-            retry_after = self._parse_retry_after(response.headers.get("Retry-After"))
-            raise RateLimitError(
-                message,
-                response.status_code,
-                data,
-                retry_after_seconds=retry_after,
-            )
-
-        # Map status to exception
-        ERROR_MAP: dict[int, type[Exception]] = {  # noqa: N806
-            400: ValidationError,
-            401: AuthenticationError,
-            403: APIKeyError,
-            404: ResourceNotFoundError,
-        }
-
-        ExceptionClass = ERROR_MAP.get(response.status_code)  # noqa: N806
-        if ExceptionClass:
-            raise ExceptionClass(message, response.status_code, data)
-
-        if response.status_code >= 500:
-            raise ServerError(message, response.status_code, data)
-
-        raise ByteITError(message, response.status_code, data)
+        return handle_response(response)
 
     # ==================== CONTEXT MANAGER ====================
 
