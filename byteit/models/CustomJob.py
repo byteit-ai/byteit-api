@@ -1,4 +1,4 @@
-"""Data model for ByteIT custom LLM jobs."""
+"""Data model for ByteIT custom jobs."""
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -7,7 +7,7 @@ from typing import Any
 
 @dataclass
 class CustomJob:
-    """Custom LLM processing job.
+    """Custom processing job.
 
     Represents a custom job in the ByteIT system, where one or more documents
     are processed with a plan-specific model using an optional schema and prompt.

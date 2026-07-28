@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.2.0] - 2026-07-28
 
 ### Added
-- Custom LLM processing jobs: `custom_job()`, `custom_job_async()`,
+- Custom processing jobs: `custom_job()`, `custom_job_async()`,
   `get_custom_jobs()`, `get_custom_job_result()` and `CustomJob`, `CustomJobList`
   models.
 - Saved schema management: `save_schema()`, `get_schemas()`, `delete_schema()`
