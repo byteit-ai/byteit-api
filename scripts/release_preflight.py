@@ -124,6 +124,7 @@ def _check_build_integrity() -> None:
 
     _run([sys.executable, "-m", "twine", "check", *dist_files], "twine check")
 
+
 def _validate_commit_message(version: str, commit_msg: str | None) -> None:
     if commit_msg is None:
         _fail("Could not read HEAD commit message")
