@@ -103,7 +103,8 @@ def _check_unreleased_empty() -> None:
             if stripped and not stripped.startswith("#"):
                 _fail(
                     "[Unreleased] section still has content. "
-                    "Move all entries to the new release section before cutting a release."
+                    "Move all entries to the new release section "
+                    "before cutting a release."
                 )
 
 
@@ -138,7 +139,8 @@ def _validate_commit_message(version: str, commit_msg: str | None) -> None:
     msg_version = match.group(1)
     if msg_version != version:
         _fail(
-            f"Commit title version ({msg_version}) does not match pyproject.toml ({version})"
+            f"Commit title version ({msg_version}) does not match "
+            f"pyproject.toml ({version})"
         )
     print(f"  ✓ commit title: {commit_msg}")
 
@@ -158,6 +160,7 @@ def _validate_semver_bump(version: str) -> None:
 
     prev_x, prev_y, prev_z = map(int, prev_version.split("."))
     curr_x, curr_y, curr_z = map(int, version.split("."))
+    _ = prev_z, curr_z  # consumed below in the patch-bump branch
 
     valid = (
         (curr_x == prev_x + 1 and curr_y == 0 and curr_z == 0)
@@ -167,14 +170,13 @@ def _validate_semver_bump(version: str) -> None:
     if not valid:
         _fail(
             f"Invalid semver bump: {prev_version} -> {version}. "
-            "Expected exactly one valid bump: major (+1.0.0), minor (+0.1.0), or patch (+0.0.1)."
+            "Expected: major (+1.0.0), minor (+0.1.0), or patch (+0.0.1)."
         )
-    print(
-        f"  ✓ valid {_bump_type(prev_x, prev_y, prev_z, curr_x, curr_y, curr_z)} bump from {prev_version}"
-    )
+    bump = _bump_type(prev_x, prev_y, curr_x, curr_y)
+    print(f"  ✓ valid {bump} bump from {prev_version}")
 
 
-def _bump_type(px, py, pz, cx, cy, cz) -> str:
+def _bump_type(px: int, py: int, cx: int, cy: int) -> str:
     if cx == px + 1:
         return "major"
     if cy == py + 1:
