@@ -17,9 +17,9 @@ except ImportError:
 
 __all__ = [
     "InputConnector",
-    "OutputConnector",
     "LocalFileInputConnector",
     "LocalFileOutputConnector",
+    "OutputConnector",
 ]
 
 if _s3_available:

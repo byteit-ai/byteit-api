@@ -57,13 +57,22 @@ class ExtractionSchema(BaseModel):
 
 
 def _prune_schema_metadata(value: object) -> Any:
-    """Remove non-essential metadata keys from a nested JSON schema object."""
+    """Remove non-essential metadata keys from a nested JSON schema object.
+
+    Keys under ``properties`` are field names and are always preserved, even
+    when a field is literally named ``title``.
+    """
     if isinstance(value, dict):
-        return {
-            key: _prune_schema_metadata(child)
-            for key, child in value.items()
-            if key not in _SCHEMA_KEYS_TO_REMOVE
-        }
+        result: dict[str, Any] = {}
+        for key, child in value.items():
+            if key == "properties" and isinstance(child, dict):
+                result[key] = {
+                    prop_name: _prune_schema_metadata(prop_schema)
+                    for prop_name, prop_schema in child.items()
+                }
+            elif key not in _SCHEMA_KEYS_TO_REMOVE:
+                result[key] = _prune_schema_metadata(child)
+        return result
     if isinstance(value, list):
         return [_prune_schema_metadata(item) for item in value]
     return value

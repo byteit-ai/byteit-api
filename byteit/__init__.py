@@ -24,6 +24,8 @@ from .exceptions import (
     ServerError,
     ValidationError,
 )
+from .models.CustomJob import CustomJob
+from .models.CustomJobList import CustomJobList
 from .models.DocumentMetadata import DocumentMetadata
 from .models.ExtractionType import ExtractionType
 from .models.ExtractJob import ExtractJob
@@ -33,6 +35,8 @@ from .models.JobStatus import JobStatus
 from .models.OutputFormat import OutputFormat
 from .models.ParseJob import ParseJob
 from .models.ProcessingOptions import ProcessingOptions
+from .models.SavedSchema import SavedSchema
+from .models.SavedSchemaList import SavedSchemaList
 from .validations import validate_processing_options
 
 try:
@@ -44,7 +48,7 @@ except ImportError:
 try:
     __version__ = version("byteit")
 except PackageNotFoundError:
-    __version__ = "1.1.0"  # fallback, keep in sync with pyproject.toml
+    __version__ = "1.1.2"  # fallback, keep in sync with pyproject.toml
 
 try:
     from .models.ExtractionSchema import ExtractionSchema  # noqa: F401
@@ -94,6 +98,8 @@ __all__ = [
     "ByteITClient",
     "JobList",
     "JobStatus",
+    "CustomJob",
+    "CustomJobList",
     "DocumentMetadata",
     "ProcessingOptions",
     "ExtractionType",
@@ -105,6 +111,8 @@ __all__ = [
     "OutputConnector",
     "LocalFileInputConnector",
     "LocalFileOutputConnector",
+    "SavedSchema",
+    "SavedSchemaList",
     "validate_processing_options",
     "ByteITError",
     "AuthenticationError",
