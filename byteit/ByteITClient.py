@@ -160,7 +160,7 @@ class ByteITClient:
             output: Optional file path to save the result to disk.
             processing_options: ProcessingOptions or dict with keys:
                 ``languages`` (list[str]), ``page_range`` (str), and
-                ``extraction_type`` (str or ExtractionType).
+                ``parse_type`` (str or ParseType).
                 ``image_annotations`` (bool), ``force_image_annotations`` (bool),
                 ``table_enrichment`` (bool)
             output_format: Optional output format override. When omitted, the
@@ -230,7 +230,7 @@ class ByteITClient:
                 paths.
             processing_options: ProcessingOptions or dict with keys:
                 ``languages`` (list[str]), ``page_range`` (str), and
-                ``extraction_type`` (str or ExtractionType).
+                ``parse_type`` (str or ParseType).
             queue_for_batch: When ``True``, the job is queued for batch
                 processing at a reduced credit cost. Processing is not
                 immediate.

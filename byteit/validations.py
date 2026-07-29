@@ -11,7 +11,7 @@ VALID_PROCESSING_OPTIONS: set[str] = {
     "image_annotations",
     "force_image_annotations",
     "table_enrichment",
-    "extraction_type",
+    "parse_type",
 }
 
 # Multi-file upload limits. Mirror the backend
