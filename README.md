@@ -264,7 +264,7 @@ result = client.parse(
     processing_options={
         "languages": ["de", "en"],
         "page_range": "1-5",
-        "extraction_type": "complex",
+        "parse_type": "complex",
     },
 )
 ```
@@ -275,7 +275,7 @@ Supported fields:
 |---|---|---|---|
 | `languages` | `list[str]` | `["en"]` | Language codes for OCR/parsing |
 | `page_range` | `str` | `""` (all pages) | Pages to process, e.g. `"1-5"` or `"1,3,5"` |
-| `extraction_type` | `str` | `"auto"` | One of `"auto"`, `"complex"`, `"ocr"`, etc. |
+| `parse_type` | `str` | `"auto"` | One of `"auto"`, `"complex"`, `"handwritten"` |
 | `image_annotations` | `bool` | `False` | Enable image annotation extraction |
 | `force_image_annotations` | `bool` | `False` | Force annotation extraction even when the image is detected as useless |
 | `table_enrichment` | `bool` | `False` | Enable table enrichment |

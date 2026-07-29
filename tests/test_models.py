@@ -3,10 +3,10 @@
 import pytest
 
 from byteit.models.DocumentMetadata import DocumentMetadata
-from byteit.models.ExtractionType import ExtractionType
 from byteit.models.JobList import JobList
 from byteit.models.JobStatus import JobStatus
 from byteit.models.ParseJob import ParseJob
+from byteit.models.ParseType import ParseType
 from byteit.models.ProcessingOptions import ProcessingOptions
 from byteit.models.SavedSchema import SavedSchema
 from byteit.models.SavedSchemaList import SavedSchemaList
@@ -164,27 +164,27 @@ class TestProcessingOptions:
 
         assert options.languages == ["en"]
         assert options.page_range == ""
-        assert options.extraction_type is ExtractionType.AUTO
+        assert options.parse_type is ParseType.AUTO
 
     def test_to_dict(self):
         """to_dict serializes options."""
         options = ProcessingOptions(
             languages=["en", "es"],
             page_range="1-5",
-            extraction_type=ExtractionType.COMPLEX,
+            parse_type=ParseType.COMPLEX,
         )
 
         result = options.to_dict()
 
         assert result["languages"] == ["en", "es"]
         assert result["page_range"] == "1-5"
-        assert result["extraction_type"] == "complex"
+        assert result["parse_type"] == "complex"
 
-    def test_from_dict_parses_extraction_type(self):
-        """from_dict converts extraction_type strings into enums."""
-        options = ProcessingOptions.from_dict({"extraction_type": "complex"})
+    def test_from_dict_parses_parse_type(self):
+        """from_dict converts parse_type strings into enums."""
+        options = ProcessingOptions.from_dict({"parse_type": "complex"})
 
-        assert options.extraction_type is ExtractionType.COMPLEX
+        assert options.parse_type is ParseType.COMPLEX
 
     def test_force_image_annotations_enables_image_annotations(self):
         """force_image_annotations implies image_annotations."""
@@ -195,10 +195,16 @@ class TestProcessingOptions:
         assert options.to_dict()["force_image_annotations"] is True
         assert options.to_dict()["image_annotations"] is True
 
-    def test_invalid_extraction_type_raises_error(self):
-        """Invalid extraction type values are rejected."""
-        with pytest.raises(ValueError, match="Invalid extraction type"):
-            ProcessingOptions(extraction_type="invalid")
+    def test_accepts_handwritten_parse_type(self):
+        """HANDWRITTEN is a valid parse type."""
+        options = ProcessingOptions(parse_type="handwritten")
+
+        assert options.parse_type is ParseType.HANDWRITTEN
+
+    def test_invalid_parse_type_raises_error(self):
+        """Invalid parse type values are rejected."""
+        with pytest.raises(ValueError, match="Invalid parse type"):
+            ProcessingOptions(parse_type="invalid")
 
 
 class TestSavedSchema:
