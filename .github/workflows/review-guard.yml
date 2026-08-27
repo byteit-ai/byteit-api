@@ -8,7 +8,7 @@ jobs:
   jira-guard:
     name: Jira Guard
     permissions:
-      pull-requests: read
+      pull-requests: write
       contents: read
     uses: byteit-ai/.github/.github/workflows/jira-guard.yml@main
     secrets: inherit
