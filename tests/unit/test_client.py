@@ -9,6 +9,7 @@ import requests
 from pydantic import Field
 
 from byteit import ByteITClient
+from byteit._rate_limit import RateLimitedSubmitter
 from byteit.connectors import LocalFileInputConnector
 from byteit.exceptions import (
     APIKeyError,
@@ -289,7 +290,7 @@ class TestDownloadParseResult:
 class TestCreateJob:
     """Test _create_job method."""
 
-    @patch.object(ByteITClient, "_request")
+    @patch.object(RateLimitedSubmitter, "_request")
     @patch.object(ByteITClient, "_get_parse_job_details")
     def test_create_job_with_local_file(self, mock_get_status, mock_request):
         """Create job with local file uploads correctly."""
@@ -305,13 +306,13 @@ class TestCreateJob:
         output_connector = Mock()
         output_connector.to_dict.return_value = {"type": "localfile"}
 
-        result = client._create_job(connector, output_connector, OutputFormat.TXT)
+        result = client._create_job(connector, output_connector)
 
         assert result == mock_job
         mock_request.assert_called_once()
         mock_get_status.assert_called_once_with("job_123")
 
-    @patch.object(ByteITClient, "_request")
+    @patch.object(RateLimitedSubmitter, "_request")
     def test_create_job_with_s3(self, mock_request):
         """Create job with S3 connector."""
         client = ByteITClient("test_key")
@@ -336,44 +337,24 @@ class TestCreateJob:
         output_connector = Mock()
         output_connector.to_dict.return_value = {"type": "localfile"}
 
-        result = client._create_job(connector, output_connector, OutputFormat.JSON)
+        result = client._create_job(connector, output_connector)
 
         assert isinstance(result, ParseJob)
         assert result.id == "job_123"
 
-    @patch.object(ByteITClient, "_request")
-    def test_create_job_serializes_excel_format_as_zip(self, mock_request):
-        """Serialize Excel output format as zip in the job creation payload."""
+    def test_create_job_serializes_excel_format_as_zip(self):
+        """Serialize Excel output format as zip in the job payload."""
         client = ByteITClient("test_key")
-        mock_request.return_value = {
-            "job": {
-                "id": "job_excel",
-                "created_at": "2024-01-01T00:00:00Z",
-                "updated_at": "2024-01-01T00:00:00Z",
-                "processing_status": "pending",
-                "result_format": "zip",
-            }
-        }
 
-        file_obj = Mock()
-        file_obj.closed = False
+        data = client._build_localfile_job_data(
+            processing_options=None,
+            result_format=OutputFormat.EXCEL,
+            queue_for_batch=False,
+        )
 
-        connector = Mock()
-        connector.to_dict.return_value = {"type": "localfile"}
-        connector.get_file_data.return_value = ("test.pdf", file_obj)
+        assert data["output_format"] == "zip"
 
-        output_connector = Mock()
-        output_connector.to_dict.return_value = {"type": "localfile"}
-
-        result = client._create_job(connector, output_connector, OutputFormat.EXCEL)
-
-        assert isinstance(result, ParseJob)
-        assert result.result_format == "zip"
-        request_kwargs = mock_request.call_args.kwargs
-        assert request_kwargs["data"]["output_format"] == "zip"
-        file_obj.close.assert_called_once()
-
-    @patch.object(ByteITClient, "_request")
+    @patch.object(RateLimitedSubmitter, "_request")
     @patch.object(ByteITClient, "_get_parse_job_details")
     def test_create_job_uses_parse_jobs_collection_path(
         self, mock_get_status, mock_request
@@ -390,14 +371,14 @@ class TestCreateJob:
         output_connector = Mock()
         output_connector.to_dict.return_value = {"type": "localfile"}
 
-        client._create_job(connector, output_connector, OutputFormat.MD)
+        client._create_job(connector, output_connector)
 
         assert mock_request.call_args.args[:2] == (
             "POST",
             "/v1/jobs/parse-jobs/",
         )
 
-    @patch.object(ByteITClient, "_request")
+    @patch.object(RateLimitedSubmitter, "_request")
     @patch.object(ByteITClient, "_get_parse_job_details")
     def test_create_job_sends_queue_for_batch_when_true(
         self, mock_get_status, mock_request
@@ -417,14 +398,14 @@ class TestCreateJob:
         client._create_job(
             connector,
             output_connector,
-            OutputFormat.JSON,
+            None,
             queue_for_batch=True,
         )
 
         request_kwargs = mock_request.call_args.kwargs
         assert request_kwargs["data"]["queue_for_batch"] == "true"
 
-    @patch.object(ByteITClient, "_request")
+    @patch.object(RateLimitedSubmitter, "_request")
     @patch.object(ByteITClient, "_get_parse_job_details")
     def test_create_job_omits_queue_for_batch_by_default(
         self, mock_get_status, mock_request
@@ -441,7 +422,7 @@ class TestCreateJob:
         output_connector = Mock()
         output_connector.to_dict.return_value = {"type": "localfile"}
 
-        client._create_job(connector, output_connector, OutputFormat.JSON)
+        client._create_job(connector, output_connector)
 
         request_kwargs = mock_request.call_args.kwargs
         assert "queue_for_batch" not in request_kwargs["data"]
@@ -451,7 +432,7 @@ class TestCreateJobRateLimitHandling:
     """Test adaptive rate-limit handling during parse job submission."""
 
     @patch("time.sleep")
-    @patch.object(ByteITClient, "_request")
+    @patch.object(RateLimitedSubmitter, "_request")
     @patch.object(ByteITClient, "_get_parse_job_details")
     def test_create_job_retries_after_rate_limit(
         self, mock_get_status, mock_request, mock_sleep
@@ -471,14 +452,14 @@ class TestCreateJobRateLimitHandling:
         output_connector = Mock()
         output_connector.to_dict.return_value = {"type": "localfile"}
 
-        client._create_job(connector, output_connector, OutputFormat.JSON)
+        client._create_job(connector, output_connector)
 
         assert mock_request.call_count == 2
         mock_sleep.assert_called_once_with(2.0)
-        assert client._submission_delay == 1.0
+        assert client._rate_limiter._submission_delay == 1.0
 
     @patch("time.sleep")
-    @patch.object(ByteITClient, "_request")
+    @patch.object(RateLimitedSubmitter, "_request")
     @patch.object(ByteITClient, "_get_parse_job_details")
     def test_create_job_spaces_subsequent_submissions_after_rate_limit(
         self, mock_get_status, mock_request, mock_sleep
@@ -495,16 +476,16 @@ class TestCreateJobRateLimitHandling:
         output_connector = Mock()
         output_connector.to_dict.return_value = {"type": "localfile"}
 
-        client._submission_delay = 2.0
-        client._last_submission_at = 100.0
+        client._rate_limiter._submission_delay = 2.0
+        client._rate_limiter._last_submission_at = 100.0
 
         with patch("time.monotonic", side_effect=[101.0, 102.5]):
-            client._create_job(connector, output_connector, OutputFormat.JSON)
+            client._create_job(connector, output_connector)
 
         mock_sleep.assert_called_once_with(1.0)
 
     @patch("time.sleep")
-    @patch.object(ByteITClient, "_request")
+    @patch.object(RateLimitedSubmitter, "_request")
     def test_create_job_raises_after_max_rate_limit_retries(
         self, mock_request, mock_sleep
     ):
@@ -522,7 +503,7 @@ class TestCreateJobRateLimitHandling:
         output_connector.to_dict.return_value = {"type": "localfile"}
 
         with pytest.raises(RateLimitError, match="Too many requests"):
-            client._create_job(connector, output_connector, OutputFormat.JSON)
+            client._create_job(connector, output_connector)
 
         assert mock_request.call_count == 3
         assert mock_sleep.call_count == 2
@@ -691,7 +672,7 @@ class TestParse:
         mock_wait.assert_called_once_with(
             "job_123", input_connector=mock_connector, job=mock_job
         )
-        mock_download.assert_called_once_with("job_123")
+        mock_download.assert_called_once_with("job_123", result_format=None)
 
     @patch.object(ByteITClient, "_download_parse_result")
     @patch.object(ByteITClient, "_wait_for_completion")
@@ -854,7 +835,6 @@ class TestSubmitJob:
             input_connector=mock_input_conn,
             output_connector=mock_output_conn,
             processing_options=None,
-            result_format=OutputFormat.JSON,
             queue_for_batch=False,
         )
 
