@@ -28,13 +28,13 @@ from .models.CustomJob import CustomJob
 from .models.CustomJobList import CustomJobList
 from .models.DocumentMetadata import DocumentMetadata
 from .models.DocumentType import DocumentType
-from .models.ExtractionType import ExtractionType
 from .models.ExtractJob import ExtractJob
 from .models.ExtractJobList import ExtractJobList
 from .models.JobList import JobList
 from .models.JobStatus import JobStatus
 from .models.OutputFormat import OutputFormat
 from .models.ParseJob import ParseJob
+from .models.ParseType import ParseType
 from .models.ProcessingOptions import ProcessingOptions
 from .models.SavedSchema import SavedSchema
 from .models.SavedSchemaList import SavedSchemaList
@@ -49,7 +49,7 @@ except ImportError:
 try:
     __version__ = version("byteit")
 except PackageNotFoundError:
-    __version__ = "1.2.0"  # fallback, keep in sync with pyproject.toml
+    __version__ = "1.3.0"  # fallback, keep in sync with pyproject.toml
 
 try:
     from .models.ExtractionSchema import ExtractionSchema  # noqa: F401
@@ -104,7 +104,7 @@ __all__ = [
     "DocumentMetadata",
     "DocumentType",
     "ProcessingOptions",
-    "ExtractionType",
+    "ParseType",
     "ExtractJob",
     "ExtractJobList",
     "OutputFormat",

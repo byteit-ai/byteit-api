@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-07-29
+
+### Added
+- `ParseType.HANDWRITTEN` (`"handwritten"`) parse mode for handwritten documents.
+
+### Changed
+- Renamed `ExtractionType` to `ParseType`.
+- Renamed `ProcessingOptions.extraction_type` to `ProcessingOptions.parse_type`
+  (API payload key is now `parse_type`).
+
 ## [1.2.0] - 2026-07-28
 
 ### Added

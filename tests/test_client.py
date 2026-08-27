@@ -20,10 +20,10 @@ from byteit.exceptions import (
     ValidationError,
 )
 from byteit.models.ExtractionSchema import ExtractionSchema
-from byteit.models.ExtractionType import ExtractionType
 from byteit.models.ExtractJob import ExtractJob
 from byteit.models.OutputFormat import OutputFormat
 from byteit.models.ParseJob import ParseJob
+from byteit.models.ParseType import ParseType
 from byteit.models.ProcessingOptions import ProcessingOptions
 from byteit.models.SavedSchema import SavedSchema
 from byteit.models.SavedSchemaList import SavedSchemaList
@@ -879,14 +879,12 @@ class TestSubmitJob:
 
         client._submit_job(
             "test.pdf",
-            {"extraction_type": "complex"},
+            {"parse_type": "complex"},
             OutputFormat.JSON,
         )
 
         call_kwargs = mock_create.call_args[1]
-        assert call_kwargs["processing_options"].extraction_type is (
-            ExtractionType.COMPLEX
-        )
+        assert call_kwargs["processing_options"].parse_type is (ParseType.COMPLEX)
 
     @patch.object(ByteITClient, "_create_job")
     @patch.object(ByteITClient, "_to_output_connector")

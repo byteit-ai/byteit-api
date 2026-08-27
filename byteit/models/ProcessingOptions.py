@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from typing import Any
 
-from byteit.models.ExtractionType import ExtractionType
+from byteit.models.ParseType import ParseType
 
 
 def _default_list() -> list[str]:
@@ -24,7 +24,7 @@ class ProcessingOptions:
         force_image_annotations: Force image annotation extraction even when
             image is detected as useless
         table_enrichment: Enable table enrichment
-        extraction_type: Extraction mode used by the backend parser
+        parse_type: Parse mode used by the backend parser
     """
 
     languages: list[str] = field(default_factory=_default_list)
@@ -32,26 +32,26 @@ class ProcessingOptions:
     image_annotations: bool = field(default=False)
     force_image_annotations: bool = field(default=False)
     table_enrichment: bool = field(default=False)
-    extraction_type: ExtractionType | str = field(default=ExtractionType.AUTO)
+    parse_type: ParseType | str = field(default=ParseType.AUTO)
 
     @staticmethod
-    def _parse_extraction_type(
-        extraction_type: ExtractionType | str,
-    ) -> ExtractionType:
-        """Parse extraction type into an enum value."""
-        if isinstance(extraction_type, ExtractionType):
-            return extraction_type
+    def _parse_parse_type(
+        parse_type: ParseType | str,
+    ) -> ParseType:
+        """Parse parse type into an enum value."""
+        if isinstance(parse_type, ParseType):
+            return parse_type
 
-        normalized_extraction_type = extraction_type.lower()
-        for value in ExtractionType:
-            if value.value == normalized_extraction_type:
+        normalized_parse_type = parse_type.lower()
+        for value in ParseType:
+            if value.value == normalized_parse_type:
                 return value
 
-        raise ValueError(f"Invalid extraction type: {extraction_type}")
+        raise ValueError(f"Invalid parse type: {parse_type}")
 
     def __post_init__(self) -> None:
         """Normalize processing option values after initialization."""
-        self.extraction_type = self._parse_extraction_type(self.extraction_type)
+        self.parse_type = self._parse_parse_type(self.parse_type)
 
         if self.force_image_annotations:
             self.image_annotations = True
@@ -79,7 +79,7 @@ class ProcessingOptions:
         if self.table_enrichment:
             result["table_enrichment"] = self.table_enrichment
 
-        result["extraction_type"] = self.extraction_type.value
+        result["parse_type"] = self.parse_type.value
 
         return result
 
@@ -98,7 +98,7 @@ class ProcessingOptions:
         image_annotations = data.get("image_annotations", False)
         force_image_annotations = data.get("force_image_annotations", False)
         table_enrichment = data.get("table_enrichment", False)
-        extraction_type = data.get("extraction_type", ExtractionType.AUTO)
+        parse_type = data.get("parse_type", ParseType.AUTO)
 
         return cls(
             languages=languages,
@@ -106,5 +106,5 @@ class ProcessingOptions:
             image_annotations=image_annotations,
             force_image_annotations=force_image_annotations,
             table_enrichment=table_enrichment,
-            extraction_type=extraction_type,
+            parse_type=parse_type,
         )
