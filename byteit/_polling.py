@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import Any
 
 from .exceptions import JobProcessingError
+from .models.ClassificationJob import ClassificationJob
 from .models.CustomJob import CustomJob
 from .models.ExtractJob import ExtractJob
 from .models.JobStatus import JobStatus
@@ -113,6 +114,25 @@ def wait_for_custom_job_completion(
         job,
         _update,
         error_prefix="Custom job",
+    )
+
+
+def wait_for_classification_job_completion(
+    get_status: Callable[[str], dict[str, Any] | JobStatus],
+    job_id: str,
+    job: ClassificationJob,
+) -> ClassificationJob:
+    """Wait for a classification job to complete with adaptive polling."""
+
+    def _update(j: ClassificationJob, s: JobStatus) -> ClassificationJob:
+        return dataclasses.replace(j, processing_status=s.processing_status)
+
+    return poll_until(
+        get_status,
+        job_id,
+        job,
+        _update,
+        error_prefix="Classification job",
     )
 
 

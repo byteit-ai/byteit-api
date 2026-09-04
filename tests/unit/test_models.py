@@ -2,7 +2,11 @@
 
 import pytest
 
+from byteit.models.ClassificationJob import ClassificationJob
+from byteit.models.ClassificationJobList import ClassificationJobList
 from byteit.models.DocumentMetadata import DocumentMetadata
+from byteit.models.FileClass import FileClass
+from byteit.models.FileClassList import FileClassList
 from byteit.models.JobList import JobList
 from byteit.models.JobStatus import JobStatus
 from byteit.models.ParseJob import ParseJob
@@ -262,3 +266,100 @@ class TestSavedSchemaList:
             "invoice",
             "receipt",
         ]
+
+
+class TestFileClass:
+    """Test FileClass model."""
+
+    def test_file_class_from_dict(self):
+        """FileClass.from_dict creates a model from API data."""
+        file_class = FileClass.from_dict(
+            {
+                "label": "invoice",
+                "description": "An invoice document",
+                "create_time": "2024-01-01T12:00:00Z",
+            }
+        )
+
+        assert file_class.label == "invoice"
+        assert file_class.description == "An invoice document"
+        assert file_class.create_time is not None
+
+    def test_to_api_dict(self):
+        """to_api_dict returns the classification payload shape."""
+        file_class = FileClass(label="receipt", description="A receipt")
+
+        assert file_class.to_api_dict() == {
+            "label": "receipt",
+            "description": "A receipt",
+        }
+
+
+class TestFileClassList:
+    """Test FileClassList model."""
+
+    def test_file_class_list_from_dict(self):
+        """FileClassList.from_dict creates the list model from API data."""
+        class_list = FileClassList.from_dict(
+            {
+                "detail": "Retrieved 1 user file classes.",
+                "count": 1,
+                "classes": [
+                    {"label": "invoice", "description": "An invoice document"},
+                ],
+            }
+        )
+
+        assert class_list.count == 1
+        assert class_list.classes[0].label == "invoice"
+
+
+class TestClassificationJob:
+    """Test ClassificationJob model."""
+
+    def test_classification_job_properties(self):
+        """Classification job status properties work correctly."""
+        completed = ClassificationJob(id="cls_1", processing_status="completed")
+        failed = ClassificationJob(id="cls_2", processing_status="failed")
+        processing = ClassificationJob(id="cls_3", processing_status="processing")
+
+        assert completed.is_completed is True
+        assert failed.is_failed is True
+        assert processing.is_processing is True
+
+    def test_classification_job_from_dict(self):
+        """ClassificationJob.from_dict creates a model from API data."""
+        job = ClassificationJob.from_dict(
+            {
+                "job_id": "cls_123",
+                "processing_status": "completed",
+                "document_class": "invoice",
+                "nickname": "March docs",
+                "is_internal": False,
+                "credits_cost": 1.5,
+            }
+        )
+
+        assert job.id == "cls_123"
+        assert job.document_class == "invoice"
+        assert job.nickname == "March docs"
+        assert job.credits_cost == 1.5
+
+
+class TestClassificationJobList:
+    """Test ClassificationJobList model."""
+
+    def test_classification_job_list_from_dict(self):
+        """ClassificationJobList.from_dict creates the list model from API data."""
+        job_list = ClassificationJobList.from_dict(
+            {
+                "detail": "Retrieved 1 classification jobs.",
+                "count": 1,
+                "classification_jobs": [
+                    {"id": "cls_123", "processing_status": "completed"},
+                ],
+            }
+        )
+
+        assert job_list.count == 1
+        assert job_list.jobs[0].id == "cls_123"

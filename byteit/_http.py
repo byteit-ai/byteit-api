@@ -20,7 +20,10 @@ API_BASE = f"/{API_VERSION}"
 JOBS_PATH = "jobs"
 PARSE_JOBS_PATH = "parse-jobs"
 EXTRACT_JOBS_PATH = "extract-jobs"
+CLASSIFICATION_JOBS_PATH = "classification-jobs"
 SCHEMAS_PATH = "schemas"
+FILE_CLASSES_PATH = "file-classes"
+USER_FILE_CLASSES_PATH = "user-file-classes"
 CUSTOM_JOBS_PATH = "custom-jobs"
 
 
@@ -65,6 +68,25 @@ def build_schema_resource_path(name: str) -> str:
     return f"{build_schema_collection_path()}{encoded_name}/"
 
 
+def build_file_class_collection_path() -> str:
+    """Build the system default file-class collection path."""
+    segments = [API_BASE, FILE_CLASSES_PATH]
+    return "/" + "/".join(segment.strip("/") for segment in segments) + "/"
+
+
+def build_user_file_class_collection_path() -> str:
+    """Build the user-owned file-class collection path."""
+    segments = [API_BASE, USER_FILE_CLASSES_PATH]
+    return "/" + "/".join(segment.strip("/") for segment in segments) + "/"
+
+
+def build_user_file_class_resource_path(label: str) -> str:
+    """Build the user file-class resource path for a label."""
+    normalized_label = _normalize_file_class_label(label)
+    encoded_label = quote(normalized_label, safe="")
+    return f"{build_user_file_class_collection_path()}{encoded_label}/"
+
+
 def extract_job_data(
     response: dict[str, Any],
     primary_key: str,
@@ -86,6 +108,18 @@ def _normalize_schema_name(name: str) -> str:
         raise ValidationError("name must be a non-empty string")
 
     return normalized_name
+
+
+def _normalize_file_class_label(label: str) -> str:
+    """Normalize a file-class label before sending it to the API."""
+    if not isinstance(label, str):
+        raise ValidationError("label must be a non-empty string")
+
+    normalized_label = label.strip()
+    if not normalized_label:
+        raise ValidationError("label must be a non-empty string")
+
+    return normalized_label
 
 
 def is_duplicate_saved_schema_error(error: ValidationError) -> bool:

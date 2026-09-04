@@ -10,21 +10,26 @@ from typing import Any
 import requests
 
 from ._http import (
+    CLASSIFICATION_JOBS_PATH,
     CUSTOM_JOBS_PATH,
     EXTRACT_JOBS_PATH,
     PARSE_JOBS_PATH,
+    build_file_class_collection_path,
     build_job_collection_path,
     build_job_resource_path,
     build_job_result_path,
     build_job_status_path,
     build_schema_collection_path,
     build_schema_resource_path,
+    build_user_file_class_collection_path,
+    build_user_file_class_resource_path,
     build_url,
     extract_job_data,
     handle_response,
     is_duplicate_saved_schema_error,
 )
 from ._polling import (
+    wait_for_classification_job_completion,
     wait_for_completion,
     wait_for_custom_job_completion,
     wait_for_extract_completion,
@@ -41,11 +46,15 @@ from .exceptions import (
     JobProcessingError,
     ValidationError,
 )
+from .models.ClassificationJob import ClassificationJob
+from .models.ClassificationJobList import ClassificationJobList
 from .models.CustomJob import CustomJob
 from .models.CustomJobList import CustomJobList
 from .models.DocumentType import DocumentType
 from .models.ExtractJob import ExtractJob
 from .models.ExtractJobList import ExtractJobList
+from .models.FileClass import FileClass
+from .models.FileClassList import FileClassList
 from .models.JobList import JobList
 from .models.JobStatus import JobStatus
 from .models.OutputFormat import OutputFormat
@@ -79,6 +88,17 @@ class ByteITClient:
         get_saved_schemas():              List saved schemas for your account.
         get_saved_schema(name):           Retrieve one saved schema by name.
         delete_saved_schema(name):        Delete one saved schema by name.
+        get_default_file_classes():       List system default classification labels.
+        save_file_class(label, desc):     Save a classification label for your account.
+        get_saved_file_classes():         List saved classification labels.
+        get_saved_file_class(label):      Retrieve one saved classification label.
+        update_file_class(label, ...):    Update a saved classification label.
+        delete_file_class(label):         Delete a saved classification label.
+        classify(input, ...):             Classify a document and wait for the result.
+        classify_async(input, ...):       Submit a classification job and return.
+        get_classification_jobs():        List classification jobs for your account.
+        get_classification_job_details(): Get the full classification-job resource.
+        get_classification_job_result():  Download a completed classification result.
         custom_job(input, ...):           Submit documents for a custom job and wait.
         custom_job_async(input, ...):     Submit a custom job and return immediately.
         get_custom_jobs(before=None):     List custom jobs for your account.
@@ -603,6 +623,258 @@ class ByteITClient:
         """
         return self._delete_saved_schema(name=name)
 
+    # ==================== FILE CLASS PUBLIC API ====================
+
+    def get_default_file_classes(self) -> FileClassList:
+        """List the system default classification labels and descriptions.
+
+        These defaults are used when a classification job is created without
+        custom classes.
+
+        Returns:
+            FileClassList containing the default labels.
+
+        Example::
+
+            defaults = client.get_default_file_classes()
+            for file_class in defaults.classes:
+                print(f"{file_class.label}: {file_class.description}")
+        """
+        return self._list_default_file_classes()
+
+    def save_file_class(self, label: str, description: str) -> FileClass:
+        """Save a classification label for the authenticated user.
+
+        Args:
+            label: Unique class label for your account.
+            description: Description used by the classifier for this label.
+
+        Returns:
+            FileClass object with the persisted label and description.
+
+        Example::
+
+            file_class = client.save_file_class(
+                "purchase_order",
+                "A purchase order requesting goods or services.",
+            )
+            print(file_class.label)
+        """
+        return self._create_user_file_class(label=label, description=description)
+
+    def get_saved_file_classes(self) -> FileClassList:
+        """List all classification labels saved by the authenticated user.
+
+        Returns:
+            FileClassList containing the saved labels and list metadata.
+
+        Example::
+
+            saved = client.get_saved_file_classes()
+            for file_class in saved.classes:
+                print(file_class.label)
+        """
+        return self._list_user_file_classes()
+
+    def get_saved_file_class(self, label: str) -> FileClass:
+        """Retrieve a saved classification label by label key.
+
+        Args:
+            label: Saved file-class label.
+
+        Returns:
+            FileClass object.
+
+        Example::
+
+            file_class = client.get_saved_file_class("purchase_order")
+            print(file_class.description)
+        """
+        return self._get_user_file_class(label=label)
+
+    def update_file_class(
+        self,
+        label: str,
+        *,
+        new_label: str | None = None,
+        description: str | None = None,
+    ) -> FileClass:
+        """Update a saved classification label and/or description.
+
+        Args:
+            label: Current file-class label to update.
+            new_label: Optional replacement label.
+            description: Optional replacement description.
+
+        Returns:
+            Updated FileClass object.
+
+        Example::
+
+            updated = client.update_file_class(
+                "purchase_order",
+                description="Updated purchase-order description.",
+            )
+        """
+        return self._update_user_file_class(
+            label=label,
+            new_label=new_label,
+            description=description,
+        )
+
+    def delete_file_class(self, label: str) -> bool:
+        """Delete a saved classification label by label key.
+
+        Args:
+            label: Saved file-class label.
+
+        Returns:
+            True when the file class was deleted.
+
+        Example::
+
+            client.delete_file_class("purchase_order")
+        """
+        return self._delete_user_file_class(label=label)
+
+    # ==================== CLASSIFICATION JOB PUBLIC API ====================
+
+    def classify(
+        self,
+        input: str | Path | InputConnector,
+        classes: list[FileClass | dict[str, str]] | None = None,
+        nickname: str | None = None,
+        output: None | str | Path = None,
+    ) -> dict[str, Any]:
+        """Classify a document and wait for the result.
+
+        Submits the document, polls until processing completes, and returns
+        the classification result. When ``classes`` is omitted, system default
+        labels are used. When provided, only the given classes are used for
+        that job.
+
+        Args:
+            input: File path (str/Path) or InputConnector.
+            classes: Optional list of :class:`~byteit.models.FileClass.FileClass`
+                instances or ``{label, description}`` dicts. Omit to use
+                system defaults.
+            nickname: Optional label for easier job identification.
+            output: Optional file path to save the JSON result to disk.
+
+        Returns:
+            Classification result dictionary with ``document_class`` and
+            ``classification_response``.
+
+        Example::
+
+            result = client.classify("document.pdf")
+            print(result["document_class"])
+
+            result = client.classify(
+                "document.pdf",
+                classes=[
+                    {"label": "invoice", "description": "An invoice document"},
+                    {"label": "receipt", "description": "A payment receipt"},
+                ],
+            )
+        """
+        job = self._create_classification_job(input, classes, nickname)
+        print(f"Classification job {job.id} created. Waiting for completion...")
+        self._wait_for_classification_job_completion(job.id, job)
+
+        result = self._download_classification_result(job.id)
+
+        if isinstance(output, (str, Path)):
+            Path(output).write_text(
+                json.dumps(result, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+        return result
+
+    def classify_async(
+        self,
+        input: str | Path | InputConnector,
+        classes: list[FileClass | dict[str, str]] | None = None,
+        nickname: str | None = None,
+    ) -> ClassificationJob:
+        """Submit a classification job and return immediately.
+
+        Use this for non-blocking workflows. Check progress with
+        :meth:`get_job_status`, and retrieve results with
+        :meth:`get_classification_job_result`.
+
+        Args:
+            input: File path (str/Path) or InputConnector.
+            classes: Optional list of :class:`~byteit.models.FileClass.FileClass`
+                instances or ``{label, description}`` dicts. Omit to use
+                system defaults.
+            nickname: Optional label for easier job identification.
+
+        Returns:
+            ClassificationJob object with ``id`` and ``processing_status``.
+
+        Example::
+
+            job = client.classify_async("document.pdf")
+            status = client.get_job_status(job.id)
+            if status.is_completed:
+                result = client.get_classification_job_result(job.id)
+        """
+        job = self._create_classification_job(input, classes, nickname)
+        print(f"Classification job {job.id} submitted.")
+        return job
+
+    def get_classification_jobs(self) -> ClassificationJobList:
+        """List classification jobs for your account.
+
+        Returns:
+            ClassificationJobList with collection metadata and jobs.
+
+        Example::
+
+            job_list = client.get_classification_jobs()
+            for job in job_list.jobs:
+                print(f"{job.id}: {job.processing_status}")
+        """
+        return self._list_classification_jobs()
+
+    def get_classification_job_details(self, job_id: str) -> ClassificationJob:
+        """Get the full classification-job resource.
+
+        Args:
+            job_id: The classification job ID.
+
+        Returns:
+            ClassificationJob object with status and metadata.
+
+        Example::
+
+            job = client.get_classification_job_details("job_123")
+            print(job.document_class)
+        """
+        return self._get_classification_job_details(job_id)
+
+    def get_classification_job_result(self, job_id: str) -> dict[str, Any]:
+        """Download the result of a completed classification job.
+
+        Args:
+            job_id: The classification job ID.
+
+        Returns:
+            Classification result dictionary with ``document_class`` and
+            ``classification_response``.
+
+        Raises:
+            JobProcessingError: If the job has not completed yet.
+
+        Example::
+
+            result = client.get_classification_job_result("job_123")
+            print(result["document_class"])
+        """
+        return self._download_classification_result(job_id)
+
     # ==================== CUSTOM JOB PUBLIC API ====================
 
     def custom_job(
@@ -1047,6 +1319,209 @@ class ByteITClient:
         self._request("DELETE", build_schema_resource_path(name))
         return True
 
+    # ==================== FILE CLASS INTERNAL METHODS ====================
+
+    def _list_default_file_classes(self) -> FileClassList:
+        """List system default classification labels."""
+        response = self._request("GET", build_file_class_collection_path())
+        return FileClassList.from_dict(response)
+
+    def _create_user_file_class(self, label: str, description: str) -> FileClass:
+        """Persist a user-owned classification label."""
+        normalized_label = self._normalize_file_class_label(label)
+        normalized_description = self._normalize_file_class_description(description)
+        response = self._request(
+            "POST",
+            build_user_file_class_collection_path(),
+            json={
+                "label": normalized_label,
+                "description": normalized_description,
+            },
+        )
+        return FileClass.from_dict(response)
+
+    def _list_user_file_classes(self) -> FileClassList:
+        """List all user-owned classification labels."""
+        response = self._request("GET", build_user_file_class_collection_path())
+        return FileClassList.from_dict(response)
+
+    def _get_user_file_class(self, label: str) -> FileClass:
+        """Retrieve a user-owned classification label by key."""
+        response = self._request("GET", build_user_file_class_resource_path(label))
+        return FileClass.from_dict(response)
+
+    def _update_user_file_class(
+        self,
+        label: str,
+        new_label: str | None = None,
+        description: str | None = None,
+    ) -> FileClass:
+        """Update a user-owned classification label and/or description."""
+        payload: dict[str, str] = {}
+        if new_label is not None:
+            payload["label"] = self._normalize_file_class_label(new_label)
+        if description is not None:
+            payload["description"] = self._normalize_file_class_description(
+                description
+            )
+
+        if not payload:
+            raise ValidationError(
+                "Provide new_label and/or description to update a file class."
+            )
+
+        response = self._request(
+            "PUT",
+            build_user_file_class_resource_path(label),
+            json=payload,
+        )
+        return FileClass.from_dict(response)
+
+    def _delete_user_file_class(self, label: str) -> bool:
+        """Delete a user-owned classification label by key."""
+        self._request("DELETE", build_user_file_class_resource_path(label))
+        return True
+
+    def _normalize_file_class_label(self, label: str) -> str:
+        """Normalize a file-class label before sending it to the API."""
+        if not isinstance(label, str):
+            raise ValidationError("label must be a non-empty string")
+
+        normalized_label = label.strip()
+        if not normalized_label:
+            raise ValidationError("label must be a non-empty string")
+
+        return normalized_label
+
+    def _normalize_file_class_description(self, description: str) -> str:
+        """Normalize a file-class description before sending it to the API."""
+        if not isinstance(description, str):
+            raise ValidationError("description must be a non-empty string")
+
+        normalized_description = description.strip()
+        if not normalized_description:
+            raise ValidationError("description must be a non-empty string")
+
+        return normalized_description
+
+    def _build_classification_classes_payload(
+        self,
+        classes: list[FileClass | dict[str, str]] | None,
+    ) -> list[dict[str, str]] | None:
+        """Normalize optional classification class inputs for the API."""
+        if classes is None:
+            return None
+
+        if not isinstance(classes, list):
+            raise ValidationError("classes must be a list of FileClass or dict values.")
+
+        if not classes:
+            raise ValidationError("classes must contain at least one class.")
+
+        normalized: list[dict[str, str]] = []
+        seen_labels: set[str] = set()
+        for entry in classes:
+            if isinstance(entry, FileClass):
+                label = self._normalize_file_class_label(entry.label)
+                description = self._normalize_file_class_description(entry.description)
+            elif isinstance(entry, dict):
+                raw_label = entry.get("label")
+                raw_description = entry.get("description")
+                if not isinstance(raw_label, str) or not isinstance(
+                    raw_description, str
+                ):
+                    raise ValidationError(
+                        "Each class dict requires string label and description."
+                    )
+                label = self._normalize_file_class_label(raw_label)
+                description = self._normalize_file_class_description(raw_description)
+            else:
+                raise ValidationError(
+                    "Each class must be a FileClass or a dict with label and description."
+                )
+
+            if label in seen_labels:
+                raise ValidationError(f"Duplicate class label '{label}'.")
+            seen_labels.add(label)
+            normalized.append({"label": label, "description": description})
+
+        return normalized
+
+    # ==================== CLASSIFICATION JOB INTERNAL METHODS ====================
+
+    def _create_classification_job(
+        self,
+        input: str | Path | InputConnector,
+        classes: list[FileClass | dict[str, str]] | None = None,
+        nickname: str | None = None,
+    ) -> ClassificationJob:
+        """Submit a new classification job with an uploaded file."""
+        input_connector = self._to_input_connector(input)
+        connector_type = (
+            input_connector.to_dict().get("type", "localfile").strip().lower()
+        )
+        if connector_type != "localfile":
+            raise ValidationError(
+                "Classification jobs currently only support local file uploads."
+            )
+
+        data: dict[str, Any] = {}
+        classes_payload = self._build_classification_classes_payload(classes)
+        if classes_payload is not None:
+            data["classes"] = json.dumps(classes_payload)
+        if nickname:
+            data["nickname"] = nickname
+
+        filename, file_obj = input_connector.get_file_data()
+        try:
+            response = self._request(
+                "POST",
+                build_job_collection_path(CLASSIFICATION_JOBS_PATH),
+                files={"file": (filename, file_obj)},
+                data=data,
+            )
+        finally:
+            if file_obj and hasattr(file_obj, "close") and not file_obj.closed:
+                file_obj.close()
+
+        job_data = extract_job_data(response, primary_key="classification_job")
+        return ClassificationJob.from_dict(job_data)
+
+    def _list_classification_jobs(self) -> ClassificationJobList:
+        """List classification jobs for the authenticated user."""
+        response = self._request(
+            "GET",
+            build_job_collection_path(CLASSIFICATION_JOBS_PATH),
+        )
+        return ClassificationJobList.from_dict(response)
+
+    def _get_classification_job_details(self, job_id: str) -> ClassificationJob:
+        """Get current classification-job details."""
+        response = self._request(
+            "GET",
+            build_job_resource_path(job_id, CLASSIFICATION_JOBS_PATH),
+        )
+        job_data = extract_job_data(response, primary_key="classification_job")
+        return ClassificationJob.from_dict(job_data)
+
+    def _download_classification_result(self, job_id: str) -> dict[str, Any]:
+        """Download the JSON result of a completed classification job."""
+        data = self._request(
+            "GET",
+            build_job_result_path(job_id, CLASSIFICATION_JOBS_PATH),
+        )
+        data = data if isinstance(data, dict) else {}
+        if not data.get("ready", True):
+            status = data.get("processing_status", "unknown")
+            raise JobProcessingError(f"Result not available. Job status: {status}")
+
+        return {
+            "job_id": data.get("job_id", job_id),
+            "processing_status": data.get("processing_status"),
+            "document_class": data.get("document_class"),
+            "classification_response": data.get("classification_response"),
+        }
+
     # ==================== CUSTOM JOB INTERNAL METHODS ====================
 
     def _normalize_custom_job_inputs(
@@ -1359,6 +1834,23 @@ class ByteITClient:
         """Forward to the extracted polling helper."""
         return wait_for_custom_job_completion(
             self._get_job_processing_status,
+            job_id,
+            job,
+        )
+
+    def _wait_for_classification_job_completion(
+        self,
+        job_id: str,
+        job: ClassificationJob,
+    ) -> ClassificationJob:
+        """Poll the classification-job resource until it finishes."""
+
+        def _get_classification_status(polled_job_id: str) -> JobStatus:
+            details = self._get_classification_job_details(polled_job_id)
+            return JobStatus(processing_status=details.processing_status)
+
+        return wait_for_classification_job_completion(
+            _get_classification_status,
             job_id,
             job,
         )
