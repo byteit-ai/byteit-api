@@ -32,9 +32,7 @@ class FileClass:
 
         description = data.get("description")
         if not isinstance(description, str):
-            raise KeyError(
-                "File class response is missing required field: description"
-            )
+            raise KeyError("File class response is missing required field: description")
 
         return cls(
             label=label,

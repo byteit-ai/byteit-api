@@ -1361,9 +1361,7 @@ class ByteITClient:
         if new_label is not None:
             payload["label"] = self._normalize_file_class_label(new_label)
         if description is not None:
-            payload["description"] = self._normalize_file_class_description(
-                description
-            )
+            payload["description"] = self._normalize_file_class_description(description)
 
         if not payload:
             raise ValidationError(
@@ -1427,9 +1425,7 @@ class ByteITClient:
             elif isinstance(entry, dict):
                 raw_label = entry.get("label")
                 raw_description = entry.get("description")
-                if not isinstance(raw_label, str) or not isinstance(
-                    raw_description, str
-                ):
+                if not isinstance(raw_label, str) or not isinstance(raw_description, str):
                     raise ValidationError(
                         "Each class dict requires string label and description."
                     )

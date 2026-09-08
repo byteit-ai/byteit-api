@@ -1791,8 +1791,7 @@ class TestFileClassEndpoints:
         ):
             assert client.get_default_file_classes() is expected_list
             assert (
-                client.save_file_class("invoice", "An invoice document")
-                is expected_class
+                client.save_file_class("invoice", "An invoice document") is expected_class
             )
             assert client.get_saved_file_classes() is expected_list
             assert client.get_saved_file_class("invoice") is expected_class
