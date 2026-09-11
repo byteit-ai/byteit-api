@@ -24,12 +24,16 @@ from .exceptions import (
     ServerError,
     ValidationError,
 )
+from .models.ClassificationJob import ClassificationJob
+from .models.ClassificationJobList import ClassificationJobList
 from .models.CustomJob import CustomJob
 from .models.CustomJobList import CustomJobList
 from .models.DocumentMetadata import DocumentMetadata
 from .models.DocumentType import DocumentType
 from .models.ExtractJob import ExtractJob
 from .models.ExtractJobList import ExtractJobList
+from .models.FileClass import FileClass
+from .models.FileClassList import FileClassList
 from .models.JobList import JobList
 from .models.JobStatus import JobStatus
 from .models.OutputFormat import OutputFormat
@@ -99,6 +103,8 @@ __all__ = [
     "ByteITClient",
     "JobList",
     "JobStatus",
+    "ClassificationJob",
+    "ClassificationJobList",
     "CustomJob",
     "CustomJobList",
     "DocumentMetadata",
@@ -107,6 +113,8 @@ __all__ = [
     "ParseType",
     "ExtractJob",
     "ExtractJobList",
+    "FileClass",
+    "FileClassList",
     "OutputFormat",
     "ParseJob",
     "InputConnector",

@@ -20,8 +20,12 @@ from byteit.exceptions import (
     ServerError,
     ValidationError,
 )
+from byteit.models.ClassificationJob import ClassificationJob
+from byteit.models.ClassificationJobList import ClassificationJobList
 from byteit.models.ExtractionSchema import ExtractionSchema
 from byteit.models.ExtractJob import ExtractJob
+from byteit.models.FileClass import FileClass
+from byteit.models.FileClassList import FileClassList
 from byteit.models.OutputFormat import OutputFormat
 from byteit.models.ParseJob import ParseJob
 from byteit.models.ParseType import ParseType
@@ -1635,3 +1639,473 @@ class TestDownloadExtractResult:
         mock_request.assert_called_once_with(
             "GET", "/v1/jobs/extract-jobs/ext_789/result/"
         )
+
+
+def _make_classification_job(
+    job_id: str = "cls_123",
+    status: str = "pending",
+) -> ClassificationJob:
+    """Build a minimal ClassificationJob for use in tests."""
+    return ClassificationJob(id=job_id, processing_status=status)
+
+
+def _make_file_class(
+    label: str = "invoice",
+    description: str = "An invoice document",
+    *,
+    class_id: str | None = "11111111-1111-1111-1111-111111111111",
+    scope: str | None = "custom",
+) -> FileClass:
+    """Build a minimal FileClass for use in tests."""
+    return FileClass(
+        label=label,
+        description=description,
+        id=class_id,
+        scope=scope,
+    )
+
+
+# ---------------------------------------------------------------------------
+# File classes — save / load labels
+# ---------------------------------------------------------------------------
+
+
+class TestFileClassEndpoints:
+    """Test saved and default file-class API helpers."""
+
+    @patch.object(ByteITClient, "_request")
+    def test_list_document_classes_reads_correct_endpoint(self, mock_request):
+        """_list_document_classes GETs /v1/document-classes/."""
+        client = ByteITClient("test_key")
+        mock_request.return_value = {
+            "detail": "Retrieved 2 document classes.",
+            "count": 2,
+            "classes": [
+                {
+                    "id": "11111111-1111-1111-1111-111111111111",
+                    "label": "invoice",
+                    "description": "An invoice",
+                    "scope": "default",
+                },
+                {
+                    "id": "22222222-2222-2222-2222-222222222222",
+                    "label": "purchase_order",
+                    "description": "A purchase order",
+                    "scope": "custom",
+                },
+            ],
+        }
+
+        result = client._list_document_classes()
+
+        mock_request.assert_called_once_with("GET", "/v1/document-classes/")
+        assert isinstance(result, FileClassList)
+        assert result.count == 2
+        assert result.classes[0].scope == "default"
+        assert result.classes[1].id == "22222222-2222-2222-2222-222222222222"
+
+    @patch.object(ByteITClient, "_request")
+    def test_list_default_file_classes_filters_unified_collection(self, mock_request):
+        """_list_default_file_classes keeps only scope=default entries."""
+        client = ByteITClient("test_key")
+        mock_request.return_value = {
+            "detail": "Retrieved 2 document classes.",
+            "count": 2,
+            "classes": [
+                {
+                    "id": "11111111-1111-1111-1111-111111111111",
+                    "label": "invoice",
+                    "description": "An invoice",
+                    "scope": "default",
+                },
+                {
+                    "id": "22222222-2222-2222-2222-222222222222",
+                    "label": "purchase_order",
+                    "description": "A purchase order",
+                    "scope": "custom",
+                },
+            ],
+        }
+
+        result = client._list_default_file_classes()
+
+        mock_request.assert_called_once_with("GET", "/v1/document-classes/")
+        assert isinstance(result, FileClassList)
+        assert result.count == 1
+        assert result.classes[0].label == "invoice"
+        assert result.classes[0].scope == "default"
+
+    @patch.object(ByteITClient, "_request")
+    def test_create_document_class_posts_to_correct_endpoint(self, mock_request):
+        """_create_document_class POSTs label and description."""
+        client = ByteITClient("test_key")
+        mock_request.return_value = {
+            "id": "22222222-2222-2222-2222-222222222222",
+            "label": "purchase_order",
+            "description": "A purchase order",
+            "scope": "custom",
+        }
+
+        result = client._create_document_class(
+            " purchase_order ",
+            " A purchase order ",
+        )
+
+        mock_request.assert_called_once_with(
+            "POST",
+            "/v1/document-classes/",
+            json={
+                "label": "purchase_order",
+                "description": "A purchase order",
+            },
+        )
+        assert result.label == "purchase_order"
+        assert result.id == "22222222-2222-2222-2222-222222222222"
+        assert result.scope == "custom"
+
+    @patch.object(ByteITClient, "_request")
+    def test_get_document_class_uses_uuid_path(self, mock_request):
+        """_get_document_class GETs a UUID resource path."""
+        client = ByteITClient("test_key")
+        class_id = "22222222-2222-2222-2222-222222222222"
+        mock_request.return_value = {
+            "id": class_id,
+            "label": "purchase order",
+            "description": "A purchase order",
+            "scope": "custom",
+        }
+
+        result = client._get_document_class(class_id)
+
+        mock_request.assert_called_once_with(
+            "GET",
+            f"/v1/document-classes/{class_id}/",
+        )
+        assert result.label == "purchase order"
+        assert result.id == class_id
+
+    @patch.object(ByteITClient, "_request")
+    def test_update_document_class_puts_payload(self, mock_request):
+        """_update_document_class PUTs label/description fields."""
+        client = ByteITClient("test_key")
+        class_id = "22222222-2222-2222-2222-222222222222"
+        mock_request.return_value = {
+            "id": class_id,
+            "label": "po",
+            "description": "Updated description",
+            "scope": "custom",
+        }
+
+        result = client._update_document_class(
+            class_id,
+            label="po",
+            description="Updated description",
+        )
+
+        mock_request.assert_called_once_with(
+            "PUT",
+            f"/v1/document-classes/{class_id}/",
+            json={"label": "po", "description": "Updated description"},
+        )
+        assert result.label == "po"
+
+    def test_update_document_class_requires_changes(self):
+        """_update_document_class rejects empty update payloads."""
+        client = ByteITClient("test_key")
+
+        with pytest.raises(ValidationError, match="label and/or description"):
+            client._update_document_class("22222222-2222-2222-2222-222222222222")
+
+    @patch.object(ByteITClient, "_request")
+    def test_delete_document_class_hits_resource_path(self, mock_request):
+        """_delete_document_class DELETEs the UUID resource."""
+        client = ByteITClient("test_key")
+        class_id = "22222222-2222-2222-2222-222222222222"
+        mock_request.return_value = {}
+
+        assert client._delete_document_class(class_id) is True
+        mock_request.assert_called_once_with(
+            "DELETE",
+            f"/v1/document-classes/{class_id}/",
+        )
+
+    def test_public_file_class_methods_delegate(self):
+        """Public file-class methods delegate to internal helpers."""
+        client = ByteITClient("test_key")
+        expected_list = FileClassList(classes=[], count=0, detail="")
+        expected_class = _make_file_class()
+        class_id = expected_class.id
+
+        with (
+            patch.object(
+                client, "_list_document_classes", return_value=expected_list
+            ) as mock_all,
+            patch.object(
+                client, "_list_default_file_classes", return_value=expected_list
+            ) as mock_defaults,
+            patch.object(
+                client, "_create_document_class", return_value=expected_class
+            ) as mock_create,
+            patch.object(
+                client, "_list_user_file_classes", return_value=expected_list
+            ) as mock_list,
+            patch.object(
+                client, "_get_document_class", return_value=expected_class
+            ) as mock_get,
+            patch.object(
+                client, "_update_document_class", return_value=expected_class
+            ) as mock_update,
+            patch.object(
+                client, "_delete_document_class", return_value=True
+            ) as mock_delete,
+        ):
+            assert client.get_file_classes() is expected_list
+            assert client.get_default_file_classes() is expected_list
+            assert (
+                client.save_file_class("invoice", "An invoice document") is expected_class
+            )
+            assert client.get_saved_file_classes() is expected_list
+            assert client.get_saved_file_class(class_id) is expected_class
+            assert (
+                client.update_file_class(
+                    class_id,
+                    description="Updated",
+                )
+                is expected_class
+            )
+            assert client.delete_file_class(class_id) is True
+
+        mock_all.assert_called_once_with()
+        mock_defaults.assert_called_once_with()
+        mock_create.assert_called_once_with(
+            label="invoice",
+            description="An invoice document",
+        )
+        mock_list.assert_called_once_with()
+        mock_get.assert_called_once_with(class_id=class_id)
+        mock_update.assert_called_once_with(
+            class_id=class_id,
+            label=None,
+            description="Updated",
+        )
+        mock_delete.assert_called_once_with(class_id=class_id)
+
+# ---------------------------------------------------------------------------
+# Classification jobs
+# ---------------------------------------------------------------------------
+
+
+class TestClassificationJobEndpoints:
+    """Test classification job create/list/result helpers."""
+
+    def test_build_classification_classes_payload_from_mixed_inputs(self):
+        """Classes accept FileClass instances and dicts."""
+        client = ByteITClient("test_key")
+
+        payload = client._build_classification_classes_payload(
+            [
+                _make_file_class("invoice", "An invoice"),
+                {"label": "receipt", "description": "A receipt"},
+            ]
+        )
+
+        assert payload == [
+            {"label": "invoice", "description": "An invoice"},
+            {"label": "receipt", "description": "A receipt"},
+        ]
+
+    def test_build_classification_classes_payload_rejects_duplicates(self):
+        """Duplicate labels are rejected before the request is sent."""
+        client = ByteITClient("test_key")
+
+        with pytest.raises(ValidationError, match="Duplicate class label"):
+            client._build_classification_classes_payload(
+                [
+                    {"label": "invoice", "description": "one"},
+                    {"label": "invoice", "description": "two"},
+                ]
+            )
+
+    @patch.object(ByteITClient, "_request")
+    def test_create_classification_job_posts_multipart(self, mock_request):
+        """_create_classification_job uploads a local file and optional classes."""
+        client = ByteITClient("test_key")
+        mock_request.return_value = {
+            "detail": "Classification job created successfully.",
+            "classification_job": {
+                "id": "cls_123",
+                "processing_status": "processing",
+            },
+        }
+        mock_connector = Mock(spec=LocalFileInputConnector)
+        mock_connector.to_dict.return_value = {"type": "localfile"}
+        mock_file = Mock()
+        mock_file.closed = False
+        mock_connector.get_file_data.return_value = ("doc.pdf", mock_file)
+
+        with patch.object(client, "_to_input_connector", return_value=mock_connector):
+            result = client._create_classification_job(
+                "doc.pdf",
+                classes=[{"label": "invoice", "description": "An invoice"}],
+                nickname="March docs",
+            )
+
+        assert result.id == "cls_123"
+        mock_request.assert_called_once()
+        method, path = mock_request.call_args.args[:2]
+        assert method == "POST"
+        assert path == "/v1/jobs/classification-jobs/"
+        kwargs = mock_request.call_args.kwargs
+        assert "file" in kwargs["files"]
+        assert kwargs["data"]["nickname"] == "March docs"
+        assert '"invoice"' in kwargs["data"]["classes"]
+        mock_file.close.assert_called_once()
+
+    @patch.object(ByteITClient, "_request")
+    def test_list_classification_jobs_reads_collection(self, mock_request):
+        """_list_classification_jobs GETs the classification jobs collection."""
+        client = ByteITClient("test_key")
+        mock_request.return_value = {
+            "detail": "Retrieved 1 classification jobs.",
+            "count": 1,
+            "classification_jobs": [
+                {"id": "cls_123", "processing_status": "completed"},
+            ],
+        }
+
+        result = client._list_classification_jobs()
+
+        mock_request.assert_called_once_with("GET", "/v1/jobs/classification-jobs/")
+        assert isinstance(result, ClassificationJobList)
+        assert result.jobs[0].id == "cls_123"
+
+    @patch.object(ByteITClient, "_request")
+    def test_get_classification_job_details_reads_resource(self, mock_request):
+        """_get_classification_job_details GETs one job resource."""
+        client = ByteITClient("test_key")
+        mock_request.return_value = {
+            "id": "cls_123",
+            "processing_status": "completed",
+            "document_class": "invoice",
+        }
+
+        result = client._get_classification_job_details("cls_123")
+
+        mock_request.assert_called_once_with(
+            "GET",
+            "/v1/jobs/classification-jobs/cls_123/",
+        )
+        assert result.document_class == "invoice"
+
+    @patch.object(ByteITClient, "_request")
+    def test_download_classification_result_returns_payload(self, mock_request):
+        """_download_classification_result returns the classification payload."""
+        client = ByteITClient("test_key")
+        mock_request.return_value = {
+            "ready": True,
+            "job_id": "cls_123",
+            "processing_status": "completed",
+            "document_class": "invoice",
+            "classification_response": {"pages": []},
+        }
+
+        result = client._download_classification_result("cls_123")
+
+        assert result == {
+            "job_id": "cls_123",
+            "processing_status": "completed",
+            "document_class": "invoice",
+            "classification_response": {"pages": []},
+        }
+        mock_request.assert_called_once_with(
+            "GET",
+            "/v1/jobs/classification-jobs/cls_123/result/",
+        )
+
+    @patch.object(ByteITClient, "_request")
+    def test_download_classification_result_raises_when_not_ready(self, mock_request):
+        """Raises JobProcessingError when classification is still running."""
+        client = ByteITClient("test_key")
+        mock_request.return_value = {
+            "ready": False,
+            "processing_status": "processing",
+        }
+
+        with pytest.raises(JobProcessingError, match="Result not available"):
+            client._download_classification_result("cls_123")
+
+    @patch.object(ByteITClient, "_download_classification_result")
+    @patch.object(ByteITClient, "_wait_for_classification_job_completion")
+    @patch.object(ByteITClient, "_create_classification_job")
+    def test_classify_returns_result(self, mock_create, mock_wait, mock_download):
+        """classify() creates, waits, and returns the result."""
+        client = ByteITClient("test_key")
+        mock_job = _make_classification_job()
+        mock_create.return_value = mock_job
+        mock_download.return_value = {
+            "document_class": "invoice",
+            "classification_response": {},
+        }
+
+        result = client.classify(
+            "doc.pdf",
+            classes=[{"label": "invoice", "description": "An invoice"}],
+            nickname="test",
+        )
+
+        assert result["document_class"] == "invoice"
+        mock_create.assert_called_once_with(
+            "doc.pdf",
+            [{"label": "invoice", "description": "An invoice"}],
+            "test",
+        )
+        mock_wait.assert_called_once_with(mock_job.id, mock_job)
+        mock_download.assert_called_once_with(mock_job.id)
+
+    @patch.object(ByteITClient, "_create_classification_job")
+    def test_classify_async_returns_job(self, mock_create):
+        """classify_async() returns ClassificationJob without waiting."""
+        client = ByteITClient("test_key")
+        mock_job = _make_classification_job()
+        mock_create.return_value = mock_job
+
+        with (
+            patch.object(client, "_wait_for_classification_job_completion") as mock_wait,
+            patch.object(client, "_download_classification_result") as mock_download,
+        ):
+            result = client.classify_async("doc.pdf")
+            mock_wait.assert_not_called()
+            mock_download.assert_not_called()
+
+        assert result is mock_job
+        mock_create.assert_called_once_with("doc.pdf", None, None)
+
+    def test_public_classification_accessors_delegate(self):
+        """List/details/result public methods delegate to internals."""
+        client = ByteITClient("test_key")
+        expected_list = ClassificationJobList(jobs=[], count=0, detail="")
+        expected_job = _make_classification_job()
+        expected_result = {"document_class": "invoice"}
+
+        with (
+            patch.object(
+                client, "_list_classification_jobs", return_value=expected_list
+            ) as mock_list,
+            patch.object(
+                client,
+                "_get_classification_job_details",
+                return_value=expected_job,
+            ) as mock_details,
+            patch.object(
+                client,
+                "_download_classification_result",
+                return_value=expected_result,
+            ) as mock_result,
+        ):
+            assert client.get_classification_jobs() is expected_list
+            assert client.get_classification_job_details("cls_123") is expected_job
+            assert client.get_classification_job_result("cls_123") is expected_result
+
+        mock_list.assert_called_once_with()
+        mock_details.assert_called_once_with("cls_123")
+        mock_result.assert_called_once_with("cls_123")

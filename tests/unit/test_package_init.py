@@ -73,3 +73,11 @@ def test_saved_schema_models_are_exported() -> None:
     """Saved schema models are available from the package root."""
     assert byteit.SavedSchema.__name__ == "SavedSchema"
     assert byteit.SavedSchemaList.__name__ == "SavedSchemaList"
+
+
+def test_classification_models_are_exported() -> None:
+    """Classification and file-class models are available from the package root."""
+    assert byteit.FileClass.__name__ == "FileClass"
+    assert byteit.FileClassList.__name__ == "FileClassList"
+    assert byteit.ClassificationJob.__name__ == "ClassificationJob"
+    assert byteit.ClassificationJobList.__name__ == "ClassificationJobList"
