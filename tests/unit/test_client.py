@@ -1652,9 +1652,17 @@ def _make_classification_job(
 def _make_file_class(
     label: str = "invoice",
     description: str = "An invoice document",
+    *,
+    class_id: str | None = "11111111-1111-1111-1111-111111111111",
+    scope: str | None = "custom",
 ) -> FileClass:
     """Build a minimal FileClass for use in tests."""
-    return FileClass(label=label, description=description)
+    return FileClass(
+        label=label,
+        description=description,
+        id=class_id,
+        scope=scope,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1666,101 +1674,159 @@ class TestFileClassEndpoints:
     """Test saved and default file-class API helpers."""
 
     @patch.object(ByteITClient, "_request")
-    def test_list_default_file_classes_reads_correct_endpoint(self, mock_request):
-        """_list_default_file_classes GETs /v1/file-classes/."""
+    def test_list_document_classes_reads_correct_endpoint(self, mock_request):
+        """_list_document_classes GETs /v1/document-classes/."""
         client = ByteITClient("test_key")
         mock_request.return_value = {
-            "detail": "Retrieved 1 default file classes.",
-            "count": 1,
-            "classes": [{"label": "invoice", "description": "An invoice"}],
+            "detail": "Retrieved 2 document classes.",
+            "count": 2,
+            "classes": [
+                {
+                    "id": "11111111-1111-1111-1111-111111111111",
+                    "label": "invoice",
+                    "description": "An invoice",
+                    "scope": "default",
+                },
+                {
+                    "id": "22222222-2222-2222-2222-222222222222",
+                    "label": "purchase_order",
+                    "description": "A purchase order",
+                    "scope": "custom",
+                },
+            ],
+        }
+
+        result = client._list_document_classes()
+
+        mock_request.assert_called_once_with("GET", "/v1/document-classes/")
+        assert isinstance(result, FileClassList)
+        assert result.count == 2
+        assert result.classes[0].scope == "default"
+        assert result.classes[1].id == "22222222-2222-2222-2222-222222222222"
+
+    @patch.object(ByteITClient, "_request")
+    def test_list_default_file_classes_filters_unified_collection(self, mock_request):
+        """_list_default_file_classes keeps only scope=default entries."""
+        client = ByteITClient("test_key")
+        mock_request.return_value = {
+            "detail": "Retrieved 2 document classes.",
+            "count": 2,
+            "classes": [
+                {
+                    "id": "11111111-1111-1111-1111-111111111111",
+                    "label": "invoice",
+                    "description": "An invoice",
+                    "scope": "default",
+                },
+                {
+                    "id": "22222222-2222-2222-2222-222222222222",
+                    "label": "purchase_order",
+                    "description": "A purchase order",
+                    "scope": "custom",
+                },
+            ],
         }
 
         result = client._list_default_file_classes()
 
-        mock_request.assert_called_once_with("GET", "/v1/file-classes/")
+        mock_request.assert_called_once_with("GET", "/v1/document-classes/")
         assert isinstance(result, FileClassList)
+        assert result.count == 1
         assert result.classes[0].label == "invoice"
+        assert result.classes[0].scope == "default"
 
     @patch.object(ByteITClient, "_request")
-    def test_create_user_file_class_posts_to_correct_endpoint(self, mock_request):
-        """_create_user_file_class POSTs label and description."""
+    def test_create_document_class_posts_to_correct_endpoint(self, mock_request):
+        """_create_document_class POSTs label and description."""
         client = ByteITClient("test_key")
         mock_request.return_value = {
+            "id": "22222222-2222-2222-2222-222222222222",
             "label": "purchase_order",
             "description": "A purchase order",
+            "scope": "custom",
         }
 
-        result = client._create_user_file_class(
+        result = client._create_document_class(
             " purchase_order ",
             " A purchase order ",
         )
 
         mock_request.assert_called_once_with(
             "POST",
-            "/v1/user-file-classes/",
+            "/v1/document-classes/",
             json={
                 "label": "purchase_order",
                 "description": "A purchase order",
             },
         )
         assert result.label == "purchase_order"
+        assert result.id == "22222222-2222-2222-2222-222222222222"
+        assert result.scope == "custom"
 
     @patch.object(ByteITClient, "_request")
-    def test_get_user_file_class_encodes_label(self, mock_request):
-        """_get_user_file_class GETs an encoded label resource path."""
+    def test_get_document_class_uses_uuid_path(self, mock_request):
+        """_get_document_class GETs a UUID resource path."""
         client = ByteITClient("test_key")
+        class_id = "22222222-2222-2222-2222-222222222222"
         mock_request.return_value = {
+            "id": class_id,
             "label": "purchase order",
             "description": "A purchase order",
+            "scope": "custom",
         }
 
-        result = client._get_user_file_class("purchase order")
+        result = client._get_document_class(class_id)
 
         mock_request.assert_called_once_with(
             "GET",
-            "/v1/user-file-classes/purchase%20order/",
+            f"/v1/document-classes/{class_id}/",
         )
         assert result.label == "purchase order"
+        assert result.id == class_id
 
     @patch.object(ByteITClient, "_request")
-    def test_update_user_file_class_puts_payload(self, mock_request):
-        """_update_user_file_class PUTs rename/description fields."""
+    def test_update_document_class_puts_payload(self, mock_request):
+        """_update_document_class PUTs label/description fields."""
         client = ByteITClient("test_key")
+        class_id = "22222222-2222-2222-2222-222222222222"
         mock_request.return_value = {
+            "id": class_id,
             "label": "po",
             "description": "Updated description",
+            "scope": "custom",
         }
 
-        result = client._update_user_file_class(
-            "purchase_order",
-            new_label="po",
+        result = client._update_document_class(
+            class_id,
+            label="po",
             description="Updated description",
         )
 
         mock_request.assert_called_once_with(
             "PUT",
-            "/v1/user-file-classes/purchase_order/",
+            f"/v1/document-classes/{class_id}/",
             json={"label": "po", "description": "Updated description"},
         )
         assert result.label == "po"
 
-    def test_update_user_file_class_requires_changes(self):
-        """_update_user_file_class rejects empty update payloads."""
+    def test_update_document_class_requires_changes(self):
+        """_update_document_class rejects empty update payloads."""
         client = ByteITClient("test_key")
 
-        with pytest.raises(ValidationError, match="new_label and/or description"):
-            client._update_user_file_class("invoice")
+        with pytest.raises(ValidationError, match="label and/or description"):
+            client._update_document_class("22222222-2222-2222-2222-222222222222")
 
     @patch.object(ByteITClient, "_request")
-    def test_delete_user_file_class_hits_resource_path(self, mock_request):
-        """_delete_user_file_class DELETEs the label resource."""
+    def test_delete_document_class_hits_resource_path(self, mock_request):
+        """_delete_document_class DELETEs the UUID resource."""
         client = ByteITClient("test_key")
+        class_id = "22222222-2222-2222-2222-222222222222"
         mock_request.return_value = {}
 
-        assert client._delete_user_file_class("invoice") is True
+        assert client._delete_document_class(class_id) is True
         mock_request.assert_called_once_with(
             "DELETE",
-            "/v1/user-file-classes/invoice/",
+            f"/v1/document-classes/{class_id}/",
         )
 
     def test_public_file_class_methods_delegate(self):
@@ -1768,56 +1834,61 @@ class TestFileClassEndpoints:
         client = ByteITClient("test_key")
         expected_list = FileClassList(classes=[], count=0, detail="")
         expected_class = _make_file_class()
+        class_id = expected_class.id
 
         with (
+            patch.object(
+                client, "_list_document_classes", return_value=expected_list
+            ) as mock_all,
             patch.object(
                 client, "_list_default_file_classes", return_value=expected_list
             ) as mock_defaults,
             patch.object(
-                client, "_create_user_file_class", return_value=expected_class
+                client, "_create_document_class", return_value=expected_class
             ) as mock_create,
             patch.object(
                 client, "_list_user_file_classes", return_value=expected_list
             ) as mock_list,
             patch.object(
-                client, "_get_user_file_class", return_value=expected_class
+                client, "_get_document_class", return_value=expected_class
             ) as mock_get,
             patch.object(
-                client, "_update_user_file_class", return_value=expected_class
+                client, "_update_document_class", return_value=expected_class
             ) as mock_update,
             patch.object(
-                client, "_delete_user_file_class", return_value=True
+                client, "_delete_document_class", return_value=True
             ) as mock_delete,
         ):
+            assert client.get_file_classes() is expected_list
             assert client.get_default_file_classes() is expected_list
             assert (
                 client.save_file_class("invoice", "An invoice document") is expected_class
             )
             assert client.get_saved_file_classes() is expected_list
-            assert client.get_saved_file_class("invoice") is expected_class
+            assert client.get_saved_file_class(class_id) is expected_class
             assert (
                 client.update_file_class(
-                    "invoice",
+                    class_id,
                     description="Updated",
                 )
                 is expected_class
             )
-            assert client.delete_file_class("invoice") is True
+            assert client.delete_file_class(class_id) is True
 
+        mock_all.assert_called_once_with()
         mock_defaults.assert_called_once_with()
         mock_create.assert_called_once_with(
             label="invoice",
             description="An invoice document",
         )
         mock_list.assert_called_once_with()
-        mock_get.assert_called_once_with(label="invoice")
+        mock_get.assert_called_once_with(class_id=class_id)
         mock_update.assert_called_once_with(
-            label="invoice",
-            new_label=None,
+            class_id=class_id,
+            label=None,
             description="Updated",
         )
-        mock_delete.assert_called_once_with(label="invoice")
-
+        mock_delete.assert_called_once_with(class_id=class_id)
 
 # ---------------------------------------------------------------------------
 # Classification jobs

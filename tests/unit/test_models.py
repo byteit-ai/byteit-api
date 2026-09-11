@@ -275,14 +275,18 @@ class TestFileClass:
         """FileClass.from_dict creates a model from API data."""
         file_class = FileClass.from_dict(
             {
+                "id": "11111111-1111-1111-1111-111111111111",
                 "label": "invoice",
                 "description": "An invoice document",
+                "scope": "default",
                 "create_time": "2024-01-01T12:00:00Z",
             }
         )
 
+        assert file_class.id == "11111111-1111-1111-1111-111111111111"
         assert file_class.label == "invoice"
         assert file_class.description == "An invoice document"
+        assert file_class.scope == "default"
         assert file_class.create_time is not None
 
     def test_to_api_dict(self):
@@ -302,16 +306,22 @@ class TestFileClassList:
         """FileClassList.from_dict creates the list model from API data."""
         class_list = FileClassList.from_dict(
             {
-                "detail": "Retrieved 1 user file classes.",
+                "detail": "Retrieved 1 document classes.",
                 "count": 1,
                 "classes": [
-                    {"label": "invoice", "description": "An invoice document"},
+                    {
+                        "id": "22222222-2222-2222-2222-222222222222",
+                        "label": "invoice",
+                        "description": "An invoice document",
+                        "scope": "custom",
+                    },
                 ],
             }
         )
 
         assert class_list.count == 1
         assert class_list.classes[0].label == "invoice"
+        assert class_list.classes[0].scope == "custom"
 
 
 class TestClassificationJob:

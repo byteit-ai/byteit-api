@@ -9,11 +9,13 @@ from typing import Any
 class FileClass:
     """Classification label with a description used by the classifier.
 
-    Represents either a system default file class or a user-saved label.
+    Represents either a system default document class or a user-saved label.
     """
 
     label: str
     description: str
+    id: str | None = None
+    scope: str | None = None
     create_time: datetime | None = None
 
     def to_api_dict(self) -> dict[str, str]:
@@ -34,9 +36,19 @@ class FileClass:
         if not isinstance(description, str):
             raise KeyError("File class response is missing required field: description")
 
+        class_id = data.get("id")
+        if class_id is not None and not isinstance(class_id, str):
+            class_id = str(class_id)
+
+        scope = data.get("scope")
+        if scope is not None and not isinstance(scope, str):
+            scope = str(scope)
+
         return cls(
             label=label,
             description=description,
+            id=class_id,
+            scope=scope,
             create_time=_parse_datetime(data.get("create_time")),
         )
 

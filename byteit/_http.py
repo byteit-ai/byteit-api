@@ -22,8 +22,7 @@ PARSE_JOBS_PATH = "parse-jobs"
 EXTRACT_JOBS_PATH = "extract-jobs"
 CLASSIFICATION_JOBS_PATH = "classification-jobs"
 SCHEMAS_PATH = "schemas"
-FILE_CLASSES_PATH = "file-classes"
-USER_FILE_CLASSES_PATH = "user-file-classes"
+DOCUMENT_CLASSES_PATH = "document-classes"
 CUSTOM_JOBS_PATH = "custom-jobs"
 
 
@@ -68,23 +67,16 @@ def build_schema_resource_path(name: str) -> str:
     return f"{build_schema_collection_path()}{encoded_name}/"
 
 
-def build_file_class_collection_path() -> str:
-    """Build the system default file-class collection path."""
-    segments = [API_BASE, FILE_CLASSES_PATH]
+def build_document_class_collection_path() -> str:
+    """Build the document-class collection path."""
+    segments = [API_BASE, DOCUMENT_CLASSES_PATH]
     return "/" + "/".join(segment.strip("/") for segment in segments) + "/"
 
 
-def build_user_file_class_collection_path() -> str:
-    """Build the user-owned file-class collection path."""
-    segments = [API_BASE, USER_FILE_CLASSES_PATH]
-    return "/" + "/".join(segment.strip("/") for segment in segments) + "/"
-
-
-def build_user_file_class_resource_path(label: str) -> str:
-    """Build the user file-class resource path for a label."""
-    normalized_label = _normalize_file_class_label(label)
-    encoded_label = quote(normalized_label, safe="")
-    return f"{build_user_file_class_collection_path()}{encoded_label}/"
+def build_document_class_resource_path(class_id: str) -> str:
+    """Build the document-class resource path for a class UUID."""
+    normalized_id = _normalize_document_class_id(class_id)
+    return f"{build_document_class_collection_path()}{normalized_id}/"
 
 
 def extract_job_data(
@@ -110,16 +102,16 @@ def _normalize_schema_name(name: str) -> str:
     return normalized_name
 
 
-def _normalize_file_class_label(label: str) -> str:
-    """Normalize a file-class label before sending it to the API."""
-    if not isinstance(label, str):
-        raise ValidationError("label must be a non-empty string")
+def _normalize_document_class_id(class_id: str) -> str:
+    """Normalize a document-class UUID before sending it to the API."""
+    if not isinstance(class_id, str):
+        raise ValidationError("class_id must be a non-empty UUID string")
 
-    normalized_label = label.strip()
-    if not normalized_label:
-        raise ValidationError("label must be a non-empty string")
+    normalized_id = class_id.strip()
+    if not normalized_id:
+        raise ValidationError("class_id must be a non-empty UUID string")
 
-    return normalized_label
+    return normalized_id
 
 
 def is_duplicate_saved_schema_error(error: ValidationError) -> bool:
