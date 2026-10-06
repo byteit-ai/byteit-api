@@ -49,11 +49,11 @@ from .models.ClassificationJob import ClassificationJob
 from .models.ClassificationJobList import ClassificationJobList
 from .models.CustomJob import CustomJob
 from .models.CustomJobList import CustomJobList
+from .models.DocumentClass import DocumentClass
+from .models.DocumentClassList import DocumentClassList
 from .models.DocumentType import DocumentType
 from .models.ExtractJob import ExtractJob
 from .models.ExtractJobList import ExtractJobList
-from .models.FileClass import FileClass
-from .models.FileClassList import FileClassList
 from .models.JobList import JobList
 from .models.JobStatus import JobStatus
 from .models.OutputFormat import OutputFormat
@@ -87,13 +87,13 @@ class ByteITClient:
         get_saved_schemas():              List saved schemas for your account.
         get_saved_schema(name):           Retrieve one saved schema by name.
         delete_saved_schema(name):        Delete one saved schema by name.
-        get_file_classes():               List default and custom document classes.
-        get_default_file_classes():       List system default classification labels.
-        save_file_class(label, desc):     Save a classification label for your account.
-        get_saved_file_classes():         List saved classification labels.
-        get_saved_file_class(class_id):   Retrieve one document class by UUID.
-        update_file_class(class_id, ...): Update a saved classification label.
-        delete_file_class(class_id):      Delete a saved classification label.
+        get_document_classes():               List default and custom document classes.
+        get_default_document_classes():       List system default classification labels.
+        save_document_class(label, desc):     Save a classification label.
+        get_saved_document_classes():         List saved classification labels.
+        get_saved_document_class(class_id):   Retrieve one document class by UUID.
+        update_document_class(class_id, ...): Update a saved classification label.
+        delete_document_class(class_id):      Delete a saved classification label.
         classify(input, ...):             Classify a document and wait for the result.
         classify_async(input, ...):       Submit a classification job and return.
         get_classification_jobs():        List classification jobs for your account.
@@ -623,40 +623,40 @@ class ByteITClient:
         """
         return self._delete_saved_schema(name=name)
 
-    # ==================== FILE CLASS PUBLIC API ====================
+    # ==================== DOCUMENT CLASS PUBLIC API ====================
 
-    def get_file_classes(self) -> FileClassList:
+    def get_document_classes(self) -> DocumentClassList:
         """List default and custom document classes for the authenticated user.
 
         Returns:
-            FileClassList containing catalogue defaults and user-owned classes.
+            DocumentClassList containing catalogue defaults and user-owned classes.
 
         Example::
 
-            classes = client.get_file_classes()
-            for file_class in classes.classes:
-                print(f"{file_class.scope}: {file_class.label}")
+            classes = client.get_document_classes()
+            for document_class in classes.classes:
+                print(f"{document_class.scope}: {document_class.label}")
         """
         return self._list_document_classes()
 
-    def get_default_file_classes(self) -> FileClassList:
+    def get_default_document_classes(self) -> DocumentClassList:
         """List the system default classification labels and descriptions.
 
         These defaults are used when a classification job is created without
         custom classes.
 
         Returns:
-            FileClassList containing the default labels.
+            DocumentClassList containing the default labels.
 
         Example::
 
-            defaults = client.get_default_file_classes()
-            for file_class in defaults.classes:
-                print(f"{file_class.label}: {file_class.description}")
+            defaults = client.get_default_document_classes()
+            for document_class in defaults.classes:
+                print(f"{document_class.label}: {document_class.description}")
         """
-        return self._list_default_file_classes()
+        return self._list_default_document_classes()
 
-    def save_file_class(self, label: str, description: str) -> FileClass:
+    def save_document_class(self, label: str, description: str) -> DocumentClass:
         """Save a classification label for the authenticated user.
 
         Args:
@@ -664,55 +664,55 @@ class ByteITClient:
             description: Description used by the classifier for this label.
 
         Returns:
-            FileClass object with the persisted id, label, and description.
+            DocumentClass object with the persisted id, label, and description.
 
         Example::
 
-            file_class = client.save_file_class(
+            document_class = client.save_document_class(
                 "purchase_order",
                 "A purchase order requesting goods or services.",
             )
-            print(file_class.id, file_class.label)
+            print(document_class.id, document_class.label)
         """
         return self._create_document_class(label=label, description=description)
 
-    def get_saved_file_classes(self) -> FileClassList:
+    def get_saved_document_classes(self) -> DocumentClassList:
         """List all classification labels saved by the authenticated user.
 
         Returns:
-            FileClassList containing the saved labels and list metadata.
+            DocumentClassList containing the saved labels and list metadata.
 
         Example::
 
-            saved = client.get_saved_file_classes()
-            for file_class in saved.classes:
-                print(file_class.id, file_class.label)
+            saved = client.get_saved_document_classes()
+            for document_class in saved.classes:
+                print(document_class.id, document_class.label)
         """
-        return self._list_user_file_classes()
+        return self._list_user_document_classes()
 
-    def get_saved_file_class(self, class_id: str) -> FileClass:
+    def get_saved_document_class(self, class_id: str) -> DocumentClass:
         """Retrieve a document class by UUID.
 
         Args:
             class_id: Document-class UUID.
 
         Returns:
-            FileClass object.
+            DocumentClass object.
 
         Example::
 
-            file_class = client.get_saved_file_class(saved.id)
-            print(file_class.description)
+            document_class = client.get_saved_document_class(saved.id)
+            print(document_class.description)
         """
         return self._get_document_class(class_id=class_id)
 
-    def update_file_class(
+    def update_document_class(
         self,
         class_id: str,
         *,
         label: str | None = None,
         description: str | None = None,
-    ) -> FileClass:
+    ) -> DocumentClass:
         """Update a saved classification label and/or description.
 
         Args:
@@ -721,11 +721,11 @@ class ByteITClient:
             description: Optional replacement description.
 
         Returns:
-            Updated FileClass object.
+            Updated DocumentClass object.
 
         Example::
 
-            updated = client.update_file_class(
+            updated = client.update_document_class(
                 saved.id,
                 description="Updated purchase-order description.",
             )
@@ -736,18 +736,18 @@ class ByteITClient:
             description=description,
         )
 
-    def delete_file_class(self, class_id: str) -> bool:
+    def delete_document_class(self, class_id: str) -> bool:
         """Delete a saved classification label by UUID.
 
         Args:
             class_id: Document-class UUID.
 
         Returns:
-            True when the file class was deleted.
+            True when the document class was deleted.
 
         Example::
 
-            client.delete_file_class(saved.id)
+            client.delete_document_class(saved.id)
         """
         return self._delete_document_class(class_id=class_id)
 
@@ -756,7 +756,7 @@ class ByteITClient:
     def classify(
         self,
         input: str | Path | InputConnector,
-        classes: list[FileClass | dict[str, str]] | None = None,
+        classes: list[DocumentClass | dict[str, str]] | None = None,
         nickname: str | None = None,
         output: None | str | Path = None,
     ) -> dict[str, Any]:
@@ -769,7 +769,7 @@ class ByteITClient:
 
         Args:
             input: File path (str/Path) or InputConnector.
-            classes: Optional list of :class:`~byteit.models.FileClass.FileClass`
+            classes: Optional list of :class:`~byteit.models.DocumentClass.DocumentClass`
                 instances or ``{label, description}`` dicts. Omit to use
                 system defaults.
             nickname: Optional label for easier job identification.
@@ -809,7 +809,7 @@ class ByteITClient:
     def classify_async(
         self,
         input: str | Path | InputConnector,
-        classes: list[FileClass | dict[str, str]] | None = None,
+        classes: list[DocumentClass | dict[str, str]] | None = None,
         nickname: str | None = None,
     ) -> ClassificationJob:
         """Submit a classification job and return immediately.
@@ -820,7 +820,7 @@ class ByteITClient:
 
         Args:
             input: File path (str/Path) or InputConnector.
-            classes: Optional list of :class:`~byteit.models.FileClass.FileClass`
+            classes: Optional list of :class:`~byteit.models.DocumentClass.DocumentClass`
                 instances or ``{label, description}`` dicts. Omit to use
                 system defaults.
             nickname: Optional label for easier job identification.
@@ -1333,38 +1333,38 @@ class ByteITClient:
         self._request("DELETE", build_schema_resource_path(name))
         return True
 
-    # ==================== FILE CLASS INTERNAL METHODS ====================
+    # ==================== DOCUMENT CLASS INTERNAL METHODS ====================
 
-    def _list_document_classes(self) -> FileClassList:
+    def _list_document_classes(self) -> DocumentClassList:
         """List default and custom document classes."""
         response = self._request("GET", build_document_class_collection_path())
-        return FileClassList.from_dict(response)
+        return DocumentClassList.from_dict(response)
 
     def _filter_document_classes(
         self,
-        classes: FileClassList,
+        classes: DocumentClassList,
         *,
         scope: str,
-    ) -> FileClassList:
-        """Return a FileClassList filtered to a single ownership scope."""
+    ) -> DocumentClassList:
+        """Return a DocumentClassList filtered to a single ownership scope."""
         filtered = [entry for entry in classes.classes if entry.scope == scope]
-        return FileClassList(
+        return DocumentClassList(
             classes=filtered,
             count=len(filtered),
             detail=classes.detail,
         )
 
-    def _list_default_file_classes(self) -> FileClassList:
+    def _list_default_document_classes(self) -> DocumentClassList:
         """List system default classification labels."""
         return self._filter_document_classes(
             self._list_document_classes(),
             scope="default",
         )
 
-    def _create_document_class(self, label: str, description: str) -> FileClass:
+    def _create_document_class(self, label: str, description: str) -> DocumentClass:
         """Persist a user-owned document class."""
-        normalized_label = self._normalize_file_class_label(label)
-        normalized_description = self._normalize_file_class_description(description)
+        normalized_label = self._normalize_document_class_label(label)
+        normalized_description = self._normalize_document_class_description(description)
         response = self._request(
             "POST",
             build_document_class_collection_path(),
@@ -1373,36 +1373,38 @@ class ByteITClient:
                 "description": normalized_description,
             },
         )
-        return FileClass.from_dict(response)
+        return DocumentClass.from_dict(response)
 
-    def _list_user_file_classes(self) -> FileClassList:
+    def _list_user_document_classes(self) -> DocumentClassList:
         """List all user-owned classification labels."""
         return self._filter_document_classes(
             self._list_document_classes(),
             scope="custom",
         )
 
-    def _get_document_class(self, class_id: str) -> FileClass:
+    def _get_document_class(self, class_id: str) -> DocumentClass:
         """Retrieve a document class by UUID."""
         response = self._request("GET", build_document_class_resource_path(class_id))
-        return FileClass.from_dict(response)
+        return DocumentClass.from_dict(response)
 
     def _update_document_class(
         self,
         class_id: str,
         label: str | None = None,
         description: str | None = None,
-    ) -> FileClass:
+    ) -> DocumentClass:
         """Update a user-owned document class label and/or description."""
         payload: dict[str, str] = {}
         if label is not None:
-            payload["label"] = self._normalize_file_class_label(label)
+            payload["label"] = self._normalize_document_class_label(label)
         if description is not None:
-            payload["description"] = self._normalize_file_class_description(description)
+            payload["description"] = self._normalize_document_class_description(
+                description
+            )
 
         if not payload:
             raise ValidationError(
-                "Provide label and/or description to update a file class."
+                "Provide label and/or description to update a document class."
             )
 
         response = self._request(
@@ -1410,15 +1412,15 @@ class ByteITClient:
             build_document_class_resource_path(class_id),
             json=payload,
         )
-        return FileClass.from_dict(response)
+        return DocumentClass.from_dict(response)
 
     def _delete_document_class(self, class_id: str) -> bool:
         """Delete a user-owned document class by UUID."""
         self._request("DELETE", build_document_class_resource_path(class_id))
         return True
 
-    def _normalize_file_class_label(self, label: str) -> str:
-        """Normalize a file-class label before sending it to the API."""
+    def _normalize_document_class_label(self, label: str) -> str:
+        """Normalize a document-class label before sending it to the API."""
         if not isinstance(label, str):
             raise ValidationError("label must be a non-empty string")
 
@@ -1428,8 +1430,8 @@ class ByteITClient:
 
         return normalized_label
 
-    def _normalize_file_class_description(self, description: str) -> str:
-        """Normalize a file-class description before sending it to the API."""
+    def _normalize_document_class_description(self, description: str) -> str:
+        """Normalize a document-class description before sending it to the API."""
         if not isinstance(description, str):
             raise ValidationError("description must be a non-empty string")
 
@@ -1441,14 +1443,16 @@ class ByteITClient:
 
     def _build_classification_classes_payload(
         self,
-        classes: list[FileClass | dict[str, str]] | None,
+        classes: list[DocumentClass | dict[str, str]] | None,
     ) -> list[dict[str, str]] | None:
         """Normalize optional classification class inputs for the API."""
         if classes is None:
             return None
 
         if not isinstance(classes, list):
-            raise ValidationError("classes must be a list of FileClass or dict values.")
+            raise ValidationError(
+                "classes must be a list of DocumentClass or dict values."
+            )
 
         if not classes:
             raise ValidationError("classes must contain at least one class.")
@@ -1456,9 +1460,11 @@ class ByteITClient:
         normalized: list[dict[str, str]] = []
         seen_labels: set[str] = set()
         for entry in classes:
-            if isinstance(entry, FileClass):
-                label = self._normalize_file_class_label(entry.label)
-                description = self._normalize_file_class_description(entry.description)
+            if isinstance(entry, DocumentClass):
+                label = self._normalize_document_class_label(entry.label)
+                description = self._normalize_document_class_description(
+                    entry.description
+                )
             elif isinstance(entry, dict):
                 raw_label = entry.get("label")
                 raw_description = entry.get("description")
@@ -1466,11 +1472,12 @@ class ByteITClient:
                     raise ValidationError(
                         "Each class dict requires string label and description."
                     )
-                label = self._normalize_file_class_label(raw_label)
-                description = self._normalize_file_class_description(raw_description)
+                label = self._normalize_document_class_label(raw_label)
+                description = self._normalize_document_class_description(raw_description)
             else:
                 raise ValidationError(
-                    "Each class must be a FileClass or a dict with label and description."
+                    "Each class must be a DocumentClass or a dict with label and "
+                    "description."
                 )
 
             if label in seen_labels:
@@ -1485,7 +1492,7 @@ class ByteITClient:
     def _create_classification_job(
         self,
         input: str | Path | InputConnector,
-        classes: list[FileClass | dict[str, str]] | None = None,
+        classes: list[DocumentClass | dict[str, str]] | None = None,
         nickname: str | None = None,
     ) -> ClassificationJob:
         """Submit a new classification job with an uploaded file."""

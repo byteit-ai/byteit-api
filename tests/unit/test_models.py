@@ -4,9 +4,9 @@ import pytest
 
 from byteit.models.ClassificationJob import ClassificationJob
 from byteit.models.ClassificationJobList import ClassificationJobList
+from byteit.models.DocumentClass import DocumentClass
+from byteit.models.DocumentClassList import DocumentClassList
 from byteit.models.DocumentMetadata import DocumentMetadata
-from byteit.models.FileClass import FileClass
-from byteit.models.FileClassList import FileClassList
 from byteit.models.JobList import JobList
 from byteit.models.JobStatus import JobStatus
 from byteit.models.ParseJob import ParseJob
@@ -268,12 +268,12 @@ class TestSavedSchemaList:
         ]
 
 
-class TestFileClass:
-    """Test FileClass model."""
+class TestDocumentClass:
+    """Test DocumentClass model."""
 
-    def test_file_class_from_dict(self):
-        """FileClass.from_dict creates a model from API data."""
-        file_class = FileClass.from_dict(
+    def test_document_class_from_dict(self):
+        """DocumentClass.from_dict creates a model from API data."""
+        document_class = DocumentClass.from_dict(
             {
                 "id": "11111111-1111-1111-1111-111111111111",
                 "label": "invoice",
@@ -283,28 +283,28 @@ class TestFileClass:
             }
         )
 
-        assert file_class.id == "11111111-1111-1111-1111-111111111111"
-        assert file_class.label == "invoice"
-        assert file_class.description == "An invoice document"
-        assert file_class.scope == "default"
-        assert file_class.create_time is not None
+        assert document_class.id == "11111111-1111-1111-1111-111111111111"
+        assert document_class.label == "invoice"
+        assert document_class.description == "An invoice document"
+        assert document_class.scope == "default"
+        assert document_class.create_time is not None
 
     def test_to_api_dict(self):
         """to_api_dict returns the classification payload shape."""
-        file_class = FileClass(label="receipt", description="A receipt")
+        document_class = DocumentClass(label="receipt", description="A receipt")
 
-        assert file_class.to_api_dict() == {
+        assert document_class.to_api_dict() == {
             "label": "receipt",
             "description": "A receipt",
         }
 
 
-class TestFileClassList:
-    """Test FileClassList model."""
+class TestDocumentClassList:
+    """Test DocumentClassList model."""
 
-    def test_file_class_list_from_dict(self):
-        """FileClassList.from_dict creates the list model from API data."""
-        class_list = FileClassList.from_dict(
+    def test_document_class_list_from_dict(self):
+        """DocumentClassList.from_dict creates the list model from API data."""
+        class_list = DocumentClassList.from_dict(
             {
                 "detail": "Retrieved 1 document classes.",
                 "count": 1,

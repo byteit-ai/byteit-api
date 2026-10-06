@@ -22,10 +22,10 @@ from byteit.exceptions import (
 )
 from byteit.models.ClassificationJob import ClassificationJob
 from byteit.models.ClassificationJobList import ClassificationJobList
+from byteit.models.DocumentClass import DocumentClass
+from byteit.models.DocumentClassList import DocumentClassList
 from byteit.models.ExtractionSchema import ExtractionSchema
 from byteit.models.ExtractJob import ExtractJob
-from byteit.models.FileClass import FileClass
-from byteit.models.FileClassList import FileClassList
 from byteit.models.OutputFormat import OutputFormat
 from byteit.models.ParseJob import ParseJob
 from byteit.models.ParseType import ParseType
@@ -1649,15 +1649,15 @@ def _make_classification_job(
     return ClassificationJob(id=job_id, processing_status=status)
 
 
-def _make_file_class(
+def _make_document_class(
     label: str = "invoice",
     description: str = "An invoice document",
     *,
     class_id: str | None = "11111111-1111-1111-1111-111111111111",
     scope: str | None = "custom",
-) -> FileClass:
-    """Build a minimal FileClass for use in tests."""
-    return FileClass(
+) -> DocumentClass:
+    """Build a minimal DocumentClass for use in tests."""
+    return DocumentClass(
         label=label,
         description=description,
         id=class_id,
@@ -1666,12 +1666,12 @@ def _make_file_class(
 
 
 # ---------------------------------------------------------------------------
-# File classes — save / load labels
+# Document classes — save / load labels
 # ---------------------------------------------------------------------------
 
 
-class TestFileClassEndpoints:
-    """Test saved and default file-class API helpers."""
+class TestDocumentClassEndpoints:
+    """Test saved and default document-class API helpers."""
 
     @patch.object(ByteITClient, "_request")
     def test_list_document_classes_reads_correct_endpoint(self, mock_request):
@@ -1699,14 +1699,14 @@ class TestFileClassEndpoints:
         result = client._list_document_classes()
 
         mock_request.assert_called_once_with("GET", "/v1/document-classes/")
-        assert isinstance(result, FileClassList)
+        assert isinstance(result, DocumentClassList)
         assert result.count == 2
         assert result.classes[0].scope == "default"
         assert result.classes[1].id == "22222222-2222-2222-2222-222222222222"
 
     @patch.object(ByteITClient, "_request")
-    def test_list_default_file_classes_filters_unified_collection(self, mock_request):
-        """_list_default_file_classes keeps only scope=default entries."""
+    def test_list_default_document_classes_filters_unified_collection(self, mock_request):
+        """_list_default_document_classes keeps only scope=default entries."""
         client = ByteITClient("test_key")
         mock_request.return_value = {
             "detail": "Retrieved 2 document classes.",
@@ -1727,10 +1727,10 @@ class TestFileClassEndpoints:
             ],
         }
 
-        result = client._list_default_file_classes()
+        result = client._list_default_document_classes()
 
         mock_request.assert_called_once_with("GET", "/v1/document-classes/")
-        assert isinstance(result, FileClassList)
+        assert isinstance(result, DocumentClassList)
         assert result.count == 1
         assert result.classes[0].label == "invoice"
         assert result.classes[0].scope == "default"
@@ -1829,11 +1829,11 @@ class TestFileClassEndpoints:
             f"/v1/document-classes/{class_id}/",
         )
 
-    def test_public_file_class_methods_delegate(self):
-        """Public file-class methods delegate to internal helpers."""
+    def test_public_document_class_methods_delegate(self):
+        """Public document-class methods delegate to internal helpers."""
         client = ByteITClient("test_key")
-        expected_list = FileClassList(classes=[], count=0, detail="")
-        expected_class = _make_file_class()
+        expected_list = DocumentClassList(classes=[], count=0, detail="")
+        expected_class = _make_document_class()
         class_id = expected_class.id
 
         with (
@@ -1841,13 +1841,13 @@ class TestFileClassEndpoints:
                 client, "_list_document_classes", return_value=expected_list
             ) as mock_all,
             patch.object(
-                client, "_list_default_file_classes", return_value=expected_list
+                client, "_list_default_document_classes", return_value=expected_list
             ) as mock_defaults,
             patch.object(
                 client, "_create_document_class", return_value=expected_class
             ) as mock_create,
             patch.object(
-                client, "_list_user_file_classes", return_value=expected_list
+                client, "_list_user_document_classes", return_value=expected_list
             ) as mock_list,
             patch.object(
                 client, "_get_document_class", return_value=expected_class
@@ -1859,21 +1859,21 @@ class TestFileClassEndpoints:
                 client, "_delete_document_class", return_value=True
             ) as mock_delete,
         ):
-            assert client.get_file_classes() is expected_list
-            assert client.get_default_file_classes() is expected_list
+            assert client.get_document_classes() is expected_list
+            assert client.get_default_document_classes() is expected_list
             assert (
-                client.save_file_class("invoice", "An invoice document") is expected_class
+                client.save_document_class("invoice", "An invoice document") is expected_class
             )
-            assert client.get_saved_file_classes() is expected_list
-            assert client.get_saved_file_class(class_id) is expected_class
+            assert client.get_saved_document_classes() is expected_list
+            assert client.get_saved_document_class(class_id) is expected_class
             assert (
-                client.update_file_class(
+                client.update_document_class(
                     class_id,
                     description="Updated",
                 )
                 is expected_class
             )
-            assert client.delete_file_class(class_id) is True
+            assert client.delete_document_class(class_id) is True
 
         mock_all.assert_called_once_with()
         mock_defaults.assert_called_once_with()
@@ -1899,12 +1899,12 @@ class TestClassificationJobEndpoints:
     """Test classification job create/list/result helpers."""
 
     def test_build_classification_classes_payload_from_mixed_inputs(self):
-        """Classes accept FileClass instances and dicts."""
+        """Classes accept DocumentClass instances and dicts."""
         client = ByteITClient("test_key")
 
         payload = client._build_classification_classes_payload(
             [
-                _make_file_class("invoice", "An invoice"),
+                _make_document_class("invoice", "An invoice"),
                 {"label": "receipt", "description": "A receipt"},
             ]
         )

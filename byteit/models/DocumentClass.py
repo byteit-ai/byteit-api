@@ -1,4 +1,4 @@
-"""Data model for ByteIT file classification labels."""
+"""Data model for ByteIT document classification labels."""
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -6,7 +6,7 @@ from typing import Any
 
 
 @dataclass
-class FileClass:
+class DocumentClass:
     """Classification label with a description used by the classifier.
 
     Represents either a system default document class or a user-saved label.
@@ -26,15 +26,17 @@ class FileClass:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "FileClass":
-        """Create a FileClass instance from API response data."""
+    def from_dict(cls, data: dict[str, Any]) -> "DocumentClass":
+        """Create a DocumentClass instance from API response data."""
         label = data.get("label")
         if not isinstance(label, str) or not label:
-            raise KeyError("File class response is missing required field: label")
+            raise KeyError("Document class response is missing required field: label")
 
         description = data.get("description")
         if not isinstance(description, str):
-            raise KeyError("File class response is missing required field: description")
+            raise KeyError(
+                "Document class response is missing required field: description"
+            )
 
         class_id = data.get("id")
         if class_id is not None and not isinstance(class_id, str):

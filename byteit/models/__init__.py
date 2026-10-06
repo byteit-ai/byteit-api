@@ -4,12 +4,12 @@ from .ClassificationJob import ClassificationJob
 from .ClassificationJobList import ClassificationJobList
 from .CustomJob import CustomJob
 from .CustomJobList import CustomJobList
+from .DocumentClass import DocumentClass
+from .DocumentClassList import DocumentClassList
 from .DocumentMetadata import DocumentMetadata
 from .DocumentType import DocumentType
 from .ExtractJob import ExtractJob
 from .ExtractJobList import ExtractJobList
-from .FileClass import FileClass
-from .FileClassList import FileClassList
 from .JobList import JobList
 from .JobStatus import JobStatus
 from .OutputFormat import OutputFormat
@@ -24,12 +24,12 @@ __all__ = [
     "ClassificationJobList",
     "CustomJob",
     "CustomJobList",
+    "DocumentClass",
+    "DocumentClassList",
     "DocumentMetadata",
     "DocumentType",
     "ExtractJob",
     "ExtractJobList",
-    "FileClass",
-    "FileClassList",
     "JobList",
     "JobStatus",
     "OutputFormat",

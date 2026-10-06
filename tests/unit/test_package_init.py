@@ -76,8 +76,8 @@ def test_saved_schema_models_are_exported() -> None:
 
 
 def test_classification_models_are_exported() -> None:
-    """Classification and file-class models are available from the package root."""
-    assert byteit.FileClass.__name__ == "FileClass"
-    assert byteit.FileClassList.__name__ == "FileClassList"
+    """Classification and document-class models are available from the package root."""
+    assert byteit.DocumentClass.__name__ == "DocumentClass"
+    assert byteit.DocumentClassList.__name__ == "DocumentClassList"
     assert byteit.ClassificationJob.__name__ == "ClassificationJob"
     assert byteit.ClassificationJobList.__name__ == "ClassificationJobList"
